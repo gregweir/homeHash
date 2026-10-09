@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>homeHash — Local Miner Monitor</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <h1>homeHash</h1>
+            <p class="subtitle">Local Bitcoin Miner Monitor</p>
+        </div>
+        <div class="header-actions">
+            <span class="connection" id="connection">
+                <span class="dot"></span>
+                <span id="connection-label">Connecting…</span>
+            </span>
+            <button class="theme-btn" id="theme-toggle" type="button">Theme</button>
+        </div>
+    </header>
+
+    <!-- KPI row: hero tile leads with the farm hash rate -->
+    <div class="kpi-row">
+        <div class="tile hero">
+            <span class="label">Farm hash rate</span>
+            <span class="value"><span id="kpi-hashrate">—</span><span class="unit" id="kpi-hashrate-unit"></span></span>
+            <span class="sub" id="kpi-hashrate-sub">no data yet</span>
+            <sparkline id="kpi-hashrate-spark" aria-hidden="true"></sparkline>
+        </div>
+        <div class="tile">
+            <span class="label">Power</span>
+            <span class="value"><span id="kpi-power">—</span><span class="unit">W</span></span>
+            <span class="sub" id="kpi-power-sub">no power data</span>
+        </div>
+        <div class="tile">
+            <span class="label">Efficiency</span>
+            <span class="value"><span id="kpi-efficiency">—</span><span class="unit">GH/W</span></span>
+            <span class="sub" id="kpi-efficiency-sub">awaiting power data</span>
+        </div>
+        <div class="tile">
+            <span class="label">Miners online</span>
+            <span class="value"><span id="kpi-online">—</span></span>
+            <span class="sub" id="kpi-miners-sub">—</span>
+        </div>
+    </div>
+
+    <!-- Filter row: one row, above the chart it scopes -->
+    <div class="filter-row">
+        <span class="filter-label">Range</span>
+        <button class="range-btn" data-hours="1"  type="button" aria-pressed="false">1h</button>
+        <button class="range-btn" data-hours="6"  type="button" aria-pressed="false">6h</button>
+        <button class="range-btn" data-hours="24" type="button" aria-pressed="true">24h</button>
+    </div>
+
+    <!-- Hero chart -->
+    <div class="card">
+        <div class="card-head">
+            <h2>Hash rate</h2>
+            <button class="icon-btn" id="table-toggle" type="button" aria-pressed="false">View as table</button>
+        </div>
+        <div class="legend" id="chart-legend"></div>
+        <div class="chart-wrap" id="chart-wrap">
+            <div class="empty" id="chart-empty">no chart data yet — waiting for the first polls</div>
+            <div class="tooltip" id="tooltip" role="status"></div>
+        </div>
+        <div class="table-view" id="chart-table-view">
+            <table>
+                <thead><tr id="chart-table-head"></tr></thead>
+                <tbody id="chart-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Per-miner cards -->
+    <div class="card-head" style="margin: 1rem 0 0;">
+        <h2>Miners</h2>
+    </div>
+    <div class="miner-grid" id="miner-grid">
+        <div class="empty" id="miners-empty">no miners yet — start one with HOMEHASH_MINER=192.168.1.45</div>
+    </div>
+
+    <footer>
+        <span>homeHash · local-only monitoring — data never leaves your network</span>
+        <span id="footer-updated"></span>
+    </footer>
+
+    <script src="/static/js/app.js" defer></script>
+</body>
+</html>

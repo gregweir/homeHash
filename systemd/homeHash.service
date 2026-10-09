@@ -1,0 +1,29 @@
+[Unit]
+Description=homeHash - Local Bitcoin Miner Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/homeHash
+Restart=on-failure
+RestartSec=5
+User=homehash
+Group=homehash
+WorkingDirectory=/var/lib/homehash
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homehash
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/homehash
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

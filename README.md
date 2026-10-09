@@ -1,5 +1,8 @@
 # homeHash
 
+[![CI](https://github.com/gregweir/homeHash/actions/workflows/ci.yml/badge.svg)](https://github.com/gregweir/homeHash/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A lightweight, local-only monitoring dashboard for home Bitcoin miners.
 
 ## Purpose

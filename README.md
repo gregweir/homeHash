@@ -5,6 +5,8 @@
 
 A lightweight, local-only monitoring dashboard for home Bitcoin miners.
 
+![homeHash dashboard showing farm hash rate, power, efficiency, hash-rate history and per-miner cards](docs/img/dashboard.png)
+
 ## Purpose
 
 homeHash discovers Bitaxe miners on your local network and shows whether they're actually mining — hash rate, temperature, pool connection, uptime. No cloud accounts. No remote servers. Just a simple dashboard that runs on your LAN.

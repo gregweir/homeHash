@@ -119,7 +119,7 @@ func TestMDNSDiscoveryConvertsVerifiedEntriesToMiners(t *testing.T) {
 	}
 	got := miners[0]
 	want := base.Miner{
-		ID:       "bitaxe-192-168-8-12",
+		ID:       "bitaxe-192-168-1-10",
 		IP:       "192.168.1.10",
 		Model:    "Bitaxe Gamma",
 		Firmware: "v2.13.0",
@@ -363,7 +363,7 @@ func TestIPScanSkipsSelfAddresses(t *testing.T) {
 		return true, nil
 	}
 	i := &IPScanDiscovery{
-		cidrs:       []string{"192.168.8.0/24"},
+		cidrs:       []string{"192.168.1.0/24"},
 		selfIPs:     []string{"192.168.1.65"}, // the running host itself
 		prober:      prober,
 		concurrency: 4,

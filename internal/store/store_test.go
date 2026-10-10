@@ -164,17 +164,21 @@ func TestLatestStats(t *testing.T) {
 	s := openTestStore(t)
 
 	st := base.Stats{
-		HashRateGH:   450.2,
-		Accepted:     100,
-		Rejected:     2,
-		TemperatureC: 58.4,
-		FanSpeed:     72,
-		PowerW:       20.86,
-		Uptime:       90 * time.Second,
-		Timestamp:    time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC),
+		HashRateGH:    450.2,
+		Accepted:      100,
+		Rejected:      2,
+		TemperatureC:  58.4,
+		FanSpeed:      72,
+		PowerW:        20.86,
+		Uptime:        90 * time.Second,
+		Timestamp:     time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC),
+		Frequency:     620,
+		CoreVoltageMv: 1160,
+		Paused:        false,
 	}
 	older := st
 	older.HashRateGH = 440
+	older.Paused = true
 	older.Timestamp = st.Timestamp.Add(-time.Hour)
 
 	if err := s.RecordStats("miner-abc", older); err != nil {
@@ -209,14 +213,17 @@ func TestRecordStatsAndHistory(t *testing.T) {
 	s := openTestStore(t)
 
 	st1 := base.Stats{
-		HashRateGH:   450.2,
-		Accepted:     100,
-		Rejected:     2,
-		TemperatureC: 58.4,
-		FanSpeed:     72,
-		PowerW:       20.86,
-		Uptime:       90 * time.Second,
-		Timestamp:    time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC),
+		HashRateGH:    450.2,
+		Accepted:      100,
+		Rejected:      2,
+		TemperatureC:  58.4,
+		FanSpeed:      72,
+		PowerW:        20.86,
+		Uptime:        90 * time.Second,
+		Timestamp:     time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC),
+		Frequency:     618.5,
+		CoreVoltageMv: 1150,
+		Paused:        true,
 	}
 	st2 := st1
 	st2.Timestamp = st1.Timestamp.Add(time.Minute)

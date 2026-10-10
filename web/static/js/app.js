@@ -56,6 +56,7 @@ const state = {
   connected: false,
   everConnected: false,
   rangeHours: 24,        // matches the pressed range button in index.html
+  controlEnabled: false, // server-reported write access (HOMEHASH_CONTROL)
 };
 
 const sparkCaps = 120;          // rolling SSE points per miner
@@ -489,7 +490,12 @@ function buildMinerCard(m) {
   chip.appendChild(Object.assign(document.createElement("span"), { className: "dot" }));
   const chipLabel = document.createElement("span");
   chip.appendChild(chipLabel);
-  top.append(left, chip);
+  // Mining paused (device-reported): separate tag, not color alone.
+  const pausedChip = document.createElement("span");
+  pausedChip.className = "paused-chip";
+  pausedChip.textContent = "Paused";
+  pausedChip.hidden = true;
+  top.append(left, chip, pausedChip);
 
   const spark = document.createElement("sparkline");
   spark.style.height = "34px";
@@ -516,8 +522,26 @@ function buildMinerCard(m) {
   pool.className = "meta";
   pool.textContent = "";
 
-  card.append(top, spark, stats, pool);
-  card._refs = { name, meta, chip, chipLabel, spark, gh, temp, power, fan, shares, uptime, pool };
+  // Control row: only visible when the server reports write access.
+  const actions = document.createElement("div");
+  actions.className = "miner-actions";
+  const pauseBtn = document.createElement("button");
+  pauseBtn.className = "ctl-btn";
+  pauseBtn.type = "button";
+  pauseBtn.textContent = "Pause";
+  const settingsBtn = document.createElement("button");
+  settingsBtn.className = "ctl-btn subtle";
+  settingsBtn.type = "button";
+  settingsBtn.textContent = "Settings";
+  actions.append(pauseBtn, settingsBtn);
+  pauseBtn.addEventListener("click", () => togglePause(m.id));
+  settingsBtn.addEventListener("click", () => openSettingsDialog(m.id));
+
+  card.append(top, spark, stats, pool, actions);
+  card._refs = {
+    name, meta, chip, chipLabel, pausedChip, spark, gh, temp, power, fan,
+    shares, uptime, pool, actions, pauseBtn, settingsBtn,
+  };
   return card;
 }
 
@@ -576,10 +600,24 @@ function updateMinerCard(card, m) {
   rf.meta.textContent = m.ip || "";
   if (m.firmware) rf.meta.textContent += ` · ${m.firmware}`;
 
+  // Control row exists on every card; the server decides whether it shows.
+  const controlled = state.controlEnabled && m.status === "online";
+  card.classList.toggle("controlled", controlled);
+  rf.pauseBtn.hidden = !controlled;
+  rf.settingsBtn.hidden = !controlled;
+
   // Status: dot + label (never color alone).
   rf.chip.className = `status-chip ${m.status || "offline"}`;
   rf.chipLabel.textContent =
     m.status === "online" ? "Online" : m.status === "warning" ? "Warning" : "Offline";
+  const paused = !!(m.stats && m.stats.paused);
+  rf.pausedChip.hidden = !paused;
+  if (paused) {
+    // The device still serves stats, so "Online" alone would mislead.
+    rf.pauseBtn.textContent = "Resume";
+  } else {
+    rf.pauseBtn.textContent = "Pause";
+  }
 
   if (m.pool_url) rf.pool.textContent = `pool ${m.pool_url}`;
 
@@ -625,6 +663,8 @@ let lastFarmRenderHash = "";
 function onSnapshot(msg) {
   state.farm = msg.farm;
   state.miners = msg.miners || [];
+  // Write access is server-reported: read-only until /api/stats says control is on.
+  state.controlEnabled = !!(state.farm && state.farm.control_enabled);
   const now = Date.now();
 
   // farm sparkline (rolling)
@@ -882,3 +922,138 @@ document.addEventListener("keydown", (e) => {
 
 refreshAlerts();
 setInterval(refreshAlerts, 30000);
+
+/* ---------- miner control (settings, pause, resume) ---------- */
+
+async function postJSON(path, body) {
+  const opts = { method: "POST" };
+  if (body !== undefined) {
+    opts.headers = { "Content-Type": "application/json" };
+    opts.body = JSON.stringify(body);
+  }
+  let resp;
+  try {
+    resp = await fetch(path, opts);
+  } catch {
+    throw new Error("network request failed");
+  }
+  if (!resp.ok) {
+    let msg = `HTTP ${resp.status}`;
+    try {
+      const data = await resp.json();
+      if (data && data.error) msg = data.error;
+    } catch { /* non-JSON body keeps the HTTP status line */ }
+    throw new Error(msg);
+  }
+  return resp.json();
+}
+
+let toastTimer = null;
+function showToast(text, isError) {
+  const toast = $("toast");
+  toast.textContent = text;
+  toast.className = isError ? "error" : "ok";
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
+}
+
+async function togglePause(minerID) {
+  const m = state.miners.find((x) => x.id === minerID);
+  if (!m || !m.stats) return;
+  const paused = !!(m.stats.paused);
+  try {
+    await postJSON(`/api/miners/${encodeURIComponent(minerID)}/${paused ? "resume" : "pause"}`);
+    showToast(`${minerName(minerID)} mining ${paused ? "resumed" : "paused"}`);
+  } catch (err) {
+    showToast(`${minerName(minerID)}: ${err.message}`, true);
+  }
+}
+
+/* Settings dialog: edit frequency / core voltage, preview old -> new, apply */
+let dlgMinerID = null;
+
+function dlgParse(id) {
+  const raw = $(id).value.trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function updateDlgPreview() {
+  const m = state.miners.find((x) => x.id === dlgMinerID);
+  if (!m || !m.stats) return;
+  const parts = [];
+  const oldF = m.stats.frequency;
+  const newF = dlgParse("dlg-frequency");
+  if (oldF > 0 && newF !== null && newF !== oldF) {
+    parts.push(`frequency ${fmtNum(oldF, 0)} → ${fmtNum(newF, 1)} MHz`);
+  }
+  const oldV = m.stats.core_voltage_mv;
+  const newV = dlgParse("dlg-voltage");
+  if (oldV > 0 && newV !== null && newV !== oldV) {
+    parts.push(`voltage ${oldV} → ${fmtNum(newV, 0)} mV`);
+  }
+  $("dlg-preview").textContent =
+    parts.length ? `Change will apply live, no restart: ${parts.join(", ")}` : "";
+}
+
+function openSettingsDialog(minerID) {
+  const m = state.miners.find((x) => x.id === minerID);
+  if (!m || !m.stats) return;
+  dlgMinerID = minerID;
+  $("dlg-miner-meta").textContent = `${minerName(minerID)} · ${m.ip}`;
+  const s = m.stats;
+  const f = $("dlg-frequency");
+  const v = $("dlg-voltage");
+  f.value = s.frequency > 0 ? String(Math.round(s.frequency)) : "";
+  f.placeholder = s.frequency > 0 ? String(Math.round(s.frequency)) : "unknown";
+  v.value = s.core_voltage_mv > 0 ? String(s.core_voltage_mv) : "";
+  v.placeholder = s.core_voltage_mv > 0 ? String(s.core_voltage_mv) : "unknown";
+  $("dlg-error").hidden = true;
+  updateDlgPreview();
+  $("miner-dialog").showModal();
+  f.focus();
+}
+
+async function applySettingsDialog() {
+  const errEl = $("dlg-error");
+  errEl.hidden = true;
+  const body = {};
+  const newF = dlgParse("dlg-frequency");
+  const newV = dlgParse("dlg-voltage");
+  if (Number.isNaN(newF) || Number.isNaN(newV)) {
+    errEl.textContent = "Values must be numbers.";
+    errEl.hidden = false;
+    return;
+  }
+  if (newF === null && newV === null) {
+    errEl.textContent = "Nothing to change — adjust a value first.";
+    errEl.hidden = false;
+    return;
+  }
+  if (newF !== null) body.frequency = newF;
+  if (newV !== null) body.core_voltage = newV;
+  const btn = $("dlg-apply");
+  btn.disabled = true;
+  try {
+    await postJSON(`/api/miners/${encodeURIComponent(dlgMinerID)}/settings`, body);
+    $("miner-dialog").close();
+    showToast(`${minerName(dlgMinerID)}: settings applied (applies live, may ramp over ~1 min)`);
+    dlgMinerID = null;
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("dlg-frequency").addEventListener("input", updateDlgPreview);
+$("dlg-voltage").addEventListener("input", updateDlgPreview);
+$("dlg-cancel").addEventListener("click", () => {
+  $("miner-dialog").close();
+  dlgMinerID = null;
+});
+$("miner-dialog").addEventListener("close", () => { dlgMinerID = null; });
+$("dlg-apply").addEventListener("click", () => applySettingsDialog());

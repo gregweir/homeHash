@@ -560,3 +560,30 @@ func TestExportHistoryJSON(t *testing.T) {
 		t.Fatalf("unknown miner: want 404, got %d", rec.Code)
 	}
 }
+
+// The health endpoint reports the build-injected version, not a hardcoded
+// number (the release workflow stamps it with -ldflags -X main.version).
+func TestHealthReportsBuildVersion(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer s.Close()
+
+	h := New(s, WithVersion("v0.3.0"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var got struct {
+		Version string `json:"version"`
+		Status  string `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Version != "v0.3.0" || got.Status != "ok" {
+		t.Fatalf("health = %+v, want version v0.3.0 status ok", got)
+	}
+}

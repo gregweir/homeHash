@@ -1,8 +1,10 @@
 package bitaxe
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,4 +144,32 @@ func TestPollParsesPowerFromVoltageAndCurrentFallback(t *testing.T) {
 	if diff(stats.PowerW, 74.2) > 0.02 {
 		t.Errorf("PowerW: want ~74.2, got %v", stats.PowerW)
 	}
+}
+
+func TestParseInfoReportsPaused(t *testing.T) {
+	// v2.15.3 reports "miningPaused"; older firmware omits the key entirely.
+	for _, tc := range []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{"paused true", `"miningPaused": true,`, true},
+		{"paused false", `"miningPaused": false,`, false},
+		{"field absent (v2.12)", "", false},
+	} {
+		patched := strings.Replace(sysInfoRealGamma, `"hostname": "Gamma 601",`,
+			`"hostname": "Gamma 601",`+tc.key, 1)
+		info, err := parseJSONFixture(patched)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got := parseInfo(info).Paused; got != tc.want {
+			t.Errorf("%s: Paused = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func parseJSONFixture(s string) (map[string]interface{}, error) {
+	var m map[string]interface{}
+	return m, json.Unmarshal([]byte(s), &m)
 }

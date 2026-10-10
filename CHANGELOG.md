@@ -3,6 +3,27 @@
 All notable changes to homeHash are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-10-10
+
+### Added
+
+- Miner control (opt-in, `HOMEHASH_CONTROL=1`, off by default): pause/resume
+  mining (`POST /api/miners/{id}/pause|resume`) and change the ASIC frequency
+  / core voltage (`POST /api/miners/{id}/settings`); the firmware applies both
+  live, no restart, and persists them
+- Server-side clamps on accepted control values (100–750 MHz, 900–1300 mV by
+  default — the firmware itself would accept 1–65535, which is no protection),
+  overridable with `HOMEHASH_CONTROL_FREQ_MIN/MAX` and `HOMEHASH_CONTROL_VOLT_MIN/MAX`
+- The dashboard reflects write access from `/api/stats`: miner cards gain
+  Pause/Resume + Settings controls, a Paused chip tracks the device, and the
+  settings dialog previews old → new values before applying
+- Control endpoints reply 403 while control is off, 400 for malformed or
+  out-of-clamp values, 404 for unknown miners, 501 when the driver has no
+  control support, and 502 when the device rejects or fails the request
+- Per-miner stats now carry the configured `frequency`, `core_voltage_mv` and
+  device-reported `paused` state (history table migrates on open)
+- `/api/health` reports the build-injected version instead of a stale constant
+
 ## [0.2.0] - 2026-10-09
 
 ### Added

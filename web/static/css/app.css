@@ -535,3 +535,102 @@ footer {
   font-size: 0.78rem;
   text-align: center;
 }
+/* ---------- miner control (settings, pause, resume) ---------- */
+
+/* The control row exists in every card's DOM but shows only while the
+ * server reports write access (HOMEHASH_CONTROL=1). */
+.miner-actions { display: none; gap: 8px; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--border); }
+.miner-card.controlled .miner-actions { display: flex; }
+
+.ctl-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.ctl-btn:hover { border-color: var(--text-muted); }
+.ctl-btn.subtle { color: var(--text-secondary); }
+.ctl-btn:disabled { opacity: 0.5; cursor: default; }
+
+.paused-chip {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--status-warning);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* settings dialog */
+dialog {
+  /* The UA modal backdrop is near-opaque black on some themes. */
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+  min-width: min(92vw, 340px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog h2 { margin: 0 0 0.15rem; font-size: 1rem; }
+.dlg-meta { margin: 0 0 0.9rem; font-size: 0.78rem; color: var(--text-muted); }
+.dlg-field { display: block; margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--text-secondary); }
+.dlg-field input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+}
+.dlg-preview { margin: 0.2rem 0 0; font-size: 0.76rem; color: var(--text-secondary); min-height: 1rem; }
+.dlg-error { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--status-critical); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 0.9rem; }
+.dlg-actions button {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.dlg-actions button.primary {
+  background: var(--series-1);
+  border-color: var(--series-1);
+  color: #ffffff;
+}
+.dlg-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* toast */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 0.55rem 0.95rem;
+  border-radius: 9px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  z-index: auto;
+  max-width: min(92vw, 480px);
+}
+#toast.error { border-color: var(--status-critical); color: var(--status-critical); }
+#toast.ok { border-color: var(--status-good); }

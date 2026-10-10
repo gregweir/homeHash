@@ -18,14 +18,17 @@ type Miner struct {
 
 // Stats represents a single polling result from a miner.
 type Stats struct {
-	HashRateGH   float64       // Current hash rate in GH/s
-	Accepted     int64         // Lifetime accepted shares
-	Rejected     int64         // Lifetime rejected shares
-	TemperatureC float64       // Board temperature in Celsius
-	FanSpeed     int           // Fan speed percentage (0-100)
-	PowerW       float64       // Power draw in watts
-	Uptime       time.Duration // Since miner booted
-	Timestamp    time.Time     // When this poll was taken
+	HashRateGH    float64       // Current hash rate in GH/s
+	Accepted      int64         // Lifetime accepted shares
+	Rejected      int64         // Lifetime rejected shares
+	TemperatureC  float64       // Board temperature in Celsius
+	FanSpeed      int           // Fan speed percentage (0-100)
+	PowerW        float64       // Power draw in watts
+	Uptime        time.Duration // Since miner booted
+	Timestamp     time.Time     // When this poll was taken
+	Frequency     float64       // Configured ASIC frequency (MHz), 0 if unknown
+	CoreVoltageMv int           // Configured core voltage (mV), 0 if unknown
+	Paused        bool          // True while mining is paused (device-reported)
 }
 
 // InfoUpdater is optionally implemented by drivers that can refresh a

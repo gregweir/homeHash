@@ -37,8 +37,11 @@ type BitaxeDriver struct {
 	client *http.Client
 }
 
-// compile-time check that the driver supports identity updates.
-var _ base.InfoUpdater = (*BitaxeDriver)(nil)
+// compile-time checks that the driver supports identity updates and control.
+var (
+	_ base.InfoUpdater    = (*BitaxeDriver)(nil)
+	_ base.ControlUpdater = (*BitaxeDriver)(nil)
+)
 
 // New creates a new BitaxeDriver with sensible defaults.
 func New() *BitaxeDriver {
@@ -171,5 +174,15 @@ func parseInfo(info map[string]interface{}) base.Stats {
 			}
 		}
 	}
+	// Frequency/core voltage: current device settings (v2.15.3 keeps them
+	// top-level; absent on firmware that doesn't report them → zero).
+	if f, ok := num(info, "frequency"); ok {
+		s.Frequency = f
+	}
+	if v, ok := num(info, "coreVoltage"); ok {
+		s.CoreVoltageMv = int(v)
+	}
+	// Older firmware has no miningPaused key; only trust an explicit true.
+	s.Paused = info["miningPaused"] == true
 	return s
 }

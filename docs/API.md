@@ -19,8 +19,13 @@ The server also serves the dashboard itself: `GET /` returns the single-page UI
 | GET | `/api/miners` | All miners with latest stats |
 | GET | `/api/miners/{id}` | One miner's details + 24h history |
 | GET | `/api/miners/{id}/history` | Historical stats, `hours`-limited |
+| GET | `/api/miners/{id}/export/{format}` | History as file attachment (csv/json) |
+| GET | `/api/alerts` | Recent alerts, newest first |
 | GET | `/api/stats` | Aggregate farm statistics |
 | GET | `/api/events` | Server-Sent Events live stream |
+| POST | `/api/miners/{id}/settings` | Change frequency / core voltage (control) |
+| POST | `/api/miners/{id}/pause` | Pause mining (control) |
+| POST | `/api/miners/{id}/resume` | Resume mining (control) |
 
 ### GET /api/health
 
@@ -28,7 +33,7 @@ The server also serves the dashboard itself: `GET /` returns the single-page UI
 {
   "status": "ok",
   "timestamp": "2026-10-09T18:49:13Z",
-  "version": "0.1.0"
+  "version": "v0.3.0"
 }
 ```
 
@@ -58,7 +63,10 @@ Returns all known miners ordered by ID, each with its latest stored stats and a
         "fan_speed": 80,
         "power_w": 20.899,
         "uptime_seconds": 3800235,
-        "timestamp": "2026-10-09T22:55:14Z"
+        "timestamp": "2026-10-09T22:55:14Z",
+        "frequency": 620,
+        "core_voltage_mv": 1160,
+        "paused": false
       }
     }
   ]
@@ -149,11 +157,15 @@ tiles are computed from this object.
   "total_rejected": 96,
   "total_power_w": 73.76,
   "efficiency_gh_per_w": 51.37,
-  "timestamp": "2026-10-09T22:55:17Z"
+  "timestamp": "2026-10-09T22:55:17Z",
+  "control_enabled": false
 }
 ```
 
 `efficiency_gh_per_w` is 0 when no power data is available yet.
+`control_enabled` reflects write access: `true` only when the server runs with
+`HOMEHASH_CONTROL=1` — the dashboard uses it to show or hide the pause and
+settings controls.
 
 ### GET /api/events (Server-Sent Events)
 
@@ -211,6 +223,66 @@ Query parameters:
 }
 ```
 
+### POST /api/miners/{id}/settings (control)
+
+Changes a miner's ASIC frequency and/or core voltage. The axeOS firmware
+applies both live (no restart) and persists them, so the change survives
+reboots. Values apply at the device within about a minute as its power
+management re-ramps.
+
+**Enabled only when `control_enabled` is true** (`HOMEHASH_CONTROL=1`);
+otherwise the endpoint answers `403`.
+
+Body (JSON, snake_case) — provide only the keys you want changed:
+
+```json
+{"frequency": 620, "core_voltage": 1160}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| frequency | number | ASIC frequency in MHz |
+| core_voltage | number | Core voltage in mV (integer) |
+
+Response `200 {"status": "applied", "miner": "..."}` on success.
+
+The server clamps values before they reach the device (the firmware itself
+would accept 1–65535 for both, which is no protection); defaults are
+`100–750` MHz and `900–1300` mV, overridable with `HOMEHASH_CONTROL_FREQ_MIN`
+and `HOMEHASH_CONTROL_FREQ_MAX` / `HOMEHASH_CONTROL_VOLT_MIN` /
+`HOMEHASH_CONTROL_VOLT_MAX`.
+
+Status codes:
+
+| Code | Meaning |
+|------|---------|
+| 200 | Applied (or sent to the device — see note) |
+| 400 | Malformed body, value outside the clamps, or no fields provided |
+| 403 | Control is disabled (`HOMEHASH_CONTROL` unset) |
+| 404 | Unknown miner id |
+| 501 | The miner's driver has no control support |
+| 502 | The device rejected or failed the request |
+
+`frequency` and `core_voltage` are 0 in stats until the next poll after a
+change; the dashboard picks the new values up automatically.
+
+### POST /api/miners/{id}/pause (control) and POST /api/miners/{id}/resume (control)
+
+Stop or restart hashing on a miner while it keeps serving stats. Pause/resume
+take no body.
+
+Response `200 {"status": "pause"|"resume", "miner": "..."}` on success; the
+next poll reports `"paused": true` / `false` in the miner's stats.
+
+Same guards as settings: `403` with control disabled, `404` unknown miner,
+`501` driver without control support, `502` device error.
+
+**Note:** the device's own answer (HTTP 200 from axeOS) is what homeHash
+forwards — a 200 means the device accepted the request, not that the new
+frequency is stable. Watch temperature and the invalid-share share after
+changes; firmware-safe and clamped values can still be thermally marginal for
+your unit.
+
 ## Data Types
 
 ### Miner
@@ -239,6 +311,9 @@ Query parameters:
 | power_w | float | Current power draw in watts (0 if unknown) |
 | uptime_seconds | int | Current uptime in seconds |
 | timestamp | ISO 8601 | When stats were collected |
+| frequency | float | Configured ASIC frequency in MHz (0 if unknown) |
+| core_voltage_mv | int | Configured core voltage in mV (0 if unknown) |
+| paused | bool | True while mining is paused on the device |
 
 ### Alert
 
@@ -262,9 +337,13 @@ Errors are a plain object:
 
 Common HTTP status codes:
 - 200 — Success
+- 400 — Malformed request or out-of-range values
+- 403 — Control endpoint with write access disabled
 - 404 — Unknown path or miner id
 - 405 — Method not allowed
 - 500 — Internal server error
+- 501 — The miner's driver doesn't support the operation
+- 502 — The device rejected or failed the request
 
 ## Seeding Miners
 

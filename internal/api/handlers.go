@@ -6,11 +6,15 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/gregweir/homeHash/internal/config"
+	"github.com/gregweir/homeHash/internal/drivers"
 	"github.com/gregweir/homeHash/internal/drivers/base"
 	"github.com/gregweir/homeHash/internal/store"
 )
@@ -19,14 +23,44 @@ import (
 type Handler struct {
 	store *store.Store
 	mux   *http.ServeMux
+	// cfg gates and clamps write operations; nil means control (and any
+	// other config-gated feature) is off.
+	cfg *config.Config
+	// registry resolves a miner's driver for write operations; nil disables
+	// control regardless of cfg.
+	registry *drivers.Registry
+	// version is stamped by the release build (WithVersion); "dev" or a
+	// hardcoded fallback otherwise.
+	version string
 	// eventInterval is how often /api/events checks for new data;
 	// zero means the default.
 	eventInterval time.Duration
 }
 
+// Option customizes a Handler at construction.
+type Option func(*Handler)
+
+// WithVersion sets the build-injected version reported by /api/health.
+func WithVersion(v string) Option {
+	return func(h *Handler) { h.version = v }
+}
+
+// WithConfig enables config-gated features (control write endpoints).
+func WithConfig(cfg *config.Config) Option {
+	return func(h *Handler) { h.cfg = cfg }
+}
+
+// WithRegistry enables driver dispatch for control operations.
+func WithRegistry(reg *drivers.Registry) Option {
+	return func(h *Handler) { h.registry = reg }
+}
+
 // New creates a new Handler backed by the given store.
-func New(s *store.Store) *Handler {
+func New(s *store.Store, opts ...Option) *Handler {
 	h := &Handler{store: s, mux: http.NewServeMux()}
+	for _, opt := range opts {
+		opt(h)
+	}
 	h.RegisterRoutes(h.mux)
 	return h
 }
@@ -43,6 +77,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/miners/{id}", h.GetMiner)
 	mux.HandleFunc("GET /api/miners/{id}/history", h.MinerHistory)
 	mux.HandleFunc("GET /api/miners/{id}/export/{format}", h.ExportHistory)
+	mux.HandleFunc("POST /api/miners/{id}/settings", h.ApplyMinerSettings)
+	mux.HandleFunc("POST /api/miners/{id}/pause", h.PauseMiner)
+	mux.HandleFunc("POST /api/miners/{id}/resume", h.ResumeMiner)
 	mux.HandleFunc("GET /api/alerts", h.ListAlerts)
 	mux.HandleFunc("GET /api/stats", h.Stats)
 	mux.HandleFunc("GET /api/events", h.Events)
@@ -53,7 +90,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":    "ok",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"version":   "0.1.0",
+		"version":   versionString(h),
 	})
 }
 
@@ -67,6 +104,9 @@ type statsView struct {
 	PowerW        float64 `json:"power_w"`
 	UptimeSeconds int64   `json:"uptime_seconds"`
 	Timestamp     string  `json:"timestamp"`
+	Frequency     float64 `json:"frequency"`
+	CoreVoltageMv int     `json:"core_voltage_mv"`
+	Paused        bool    `json:"paused"`
 }
 
 // minerView is the JSON shape of a miner for the API and web UI.
@@ -347,6 +387,140 @@ func queryHours(r *http.Request, def int) int {
 	return n
 }
 
+// --- Miner control (settings, pause, resume) ---
+
+// controlFor runs the shared write guards — control configured on, miner
+// known, driver able to control the device — and returns the resolved
+// driver. When ok is false the response has already been written.
+func (h *Handler) controlFor(w http.ResponseWriter, r *http.Request) (base.ControlUpdater, base.Miner, bool) {
+	if !h.controlEnabled() {
+		respondJSON(w, http.StatusForbidden, map[string]string{
+			"error": "control is disabled (set HOMEHASH_CONTROL=1)",
+		})
+		return nil, base.Miner{}, false
+	}
+
+	m, ok := h.lookupMiner(w, r)
+	if !ok {
+		return nil, base.Miner{}, false
+	}
+
+	drv, found := h.registry.Get(m.Driver)
+	cu, supported := drv.(base.ControlUpdater)
+	if !found || !supported {
+		respondJSON(w, http.StatusNotImplemented, map[string]string{
+			"error": fmt.Sprintf("driver %q does not support control", m.Driver),
+		})
+		return nil, base.Miner{}, false
+	}
+	return cu, m, true
+}
+
+// settingsReq is the request body of POST /api/miners/{id}/settings. Only
+// provided keys are changed on the device.
+type settingsReq struct {
+	Frequency   *float64 `json:"frequency"`    // ASIC frequency, MHz
+	CoreVoltage *float64 `json:"core_voltage"` // core voltage, mV
+}
+
+// ApplyMinerSettings patches a miner's frequency and/or core voltage.
+func (h *Handler) ApplyMinerSettings(w http.ResponseWriter, r *http.Request) {
+	cu, m, ok := h.controlFor(w, r)
+	if !ok {
+		return
+	}
+
+	b, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "read body"})
+		return
+	}
+	var req settingsReq
+	if err := json.Unmarshal(b, &req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid JSON body",
+		})
+		return
+	}
+
+	patch := base.SettingsPatch{}
+	if req.Frequency != nil {
+		f := *req.Frequency
+		if f < h.cfg.ControlFreqMin || f > h.cfg.ControlFreqMax {
+			respondJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("frequency %.1f MHz out of range (%.0f–%.0f MHz)",
+					f, h.cfg.ControlFreqMin, h.cfg.ControlFreqMax),
+			})
+			return
+		}
+		patch.Frequency = &f
+	}
+	if req.CoreVoltage != nil {
+		v := *req.CoreVoltage
+		if v != math.Floor(v) {
+			respondJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("core voltage %v must be an integer number of mV", v),
+			})
+			return
+		}
+		if v < float64(h.cfg.ControlVoltMin) || v > float64(h.cfg.ControlVoltMax) {
+			respondJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("core voltage %.0f mV out of range (%d–%d mV)",
+					v, h.cfg.ControlVoltMin, h.cfg.ControlVoltMax),
+			})
+			return
+		}
+		iv := int(v)
+		patch.CoreVoltage = &iv
+	}
+	if patch.Frequency == nil && patch.CoreVoltage == nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "no settings provided (frequency and/or core_voltage)",
+		})
+		return
+	}
+
+	if err := cu.ApplySettings(m, patch); err != nil {
+		respondJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{
+		"status": "applied",
+		"miner":  m.ID,
+	})
+}
+
+// PauseMiner pauses mining on the miner; ResumeMiner resumes it.
+func (h *Handler) PauseMiner(w http.ResponseWriter, r *http.Request) {
+	h.mineToggle(w, r, "pause")
+}
+
+func (h *Handler) ResumeMiner(w http.ResponseWriter, r *http.Request) {
+	h.mineToggle(w, r, "resume")
+}
+
+func (h *Handler) mineToggle(w http.ResponseWriter, r *http.Request, op string) {
+	cu, m, ok := h.controlFor(w, r)
+	if !ok {
+		return
+	}
+	var err error
+	switch op {
+	case "pause":
+		err = cu.Pause(m)
+	default:
+		err = cu.Resume(m)
+	}
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{
+		"status": op,
+		"miner":  m.ID,
+	})
+}
+
 func statsViewOf(st base.Stats) statsView {
 	return statsView{
 		HashRateGH:    st.HashRateGH,
@@ -357,6 +531,9 @@ func statsViewOf(st base.Stats) statsView {
 		PowerW:        st.PowerW,
 		UptimeSeconds: int64(st.Uptime / time.Second),
 		Timestamp:     st.Timestamp.UTC().Format(time.RFC3339),
+		Frequency:     st.Frequency,
+		CoreVoltageMv: st.CoreVoltageMv,
+		Paused:        st.Paused,
 	}
 }
 
@@ -428,8 +605,22 @@ func (h *Handler) aggregate() map[string]interface{} {
 		"efficiency_gh_per_w": efficiency(hashrateGH, powerW),
 		"total_accepted":      accepted,
 		"total_rejected":      rejected,
+		"control_enabled":     h.controlEnabled(),
 		"timestamp":           time.Now().UTC().Format(time.RFC3339),
 	}
+}
+
+// controlEnabled reports whether write operations are configured on.
+func (h *Handler) controlEnabled() bool {
+	return h.cfg != nil && h.cfg.ControlEnabled && h.registry != nil
+}
+
+// versionString is the build-reported version, "dev" for unstamped builds.
+func versionString(h *Handler) string {
+	if h.version != "" {
+		return h.version
+	}
+	return "dev"
 }
 
 // efficiency is GH per watt (higher is better); 0 if power is unknown.

@@ -26,6 +26,14 @@ type Config struct {
 	OfflineAfter    time.Duration // A miner is offline when last poll is older than this
 	AlertCooldown   time.Duration // Re-nag for the same condition after this long
 	AlertInterval   time.Duration // How often the alert loop evaluates
+
+	// Control: write access to miners (settings, pause, resume). Off by
+	// default — a monitor ships read-only.
+	ControlEnabled bool
+	// Hard clamps on accepted values, overridable per environment. The
+	// firmware itself would accept 1..65535 for both, which is no protection.
+	ControlFreqMin, ControlFreqMax float64
+	ControlVoltMin, ControlVoltMax int
 }
 
 // Default returns a Config with sensible defaults.
@@ -46,6 +54,12 @@ func Default() *Config {
 		OfflineAfter:    getEnvDuration("HOMEHASH_ALERT_OFFLINE_AFTER", 10*time.Minute),
 		AlertCooldown:   getEnvDuration("HOMEHASH_ALERT_COOLDOWN", 15*time.Minute),
 		AlertInterval:   getEnvDuration("HOMEHASH_ALERT_INTERVAL", 30*time.Second),
+
+		ControlEnabled: getEnvBool("HOMEHASH_CONTROL", false),
+		ControlFreqMin: getEnvFloat("HOMEHASH_CONTROL_FREQ_MIN", 100),
+		ControlFreqMax: getEnvFloat("HOMEHASH_CONTROL_FREQ_MAX", 750),
+		ControlVoltMin: getEnvInt("HOMEHASH_CONTROL_VOLT_MIN", 900),
+		ControlVoltMax: getEnvInt("HOMEHASH_CONTROL_VOLT_MAX", 1300),
 	}
 }
 

@@ -55,6 +55,34 @@ Configuration is all environment variables:
 | `HOMEHASH_ALERT_OFFLINE_AFTER` | 10m | Miner offline when last poll is older than this |
 | `HOMEHASH_ALERT_COOLDOWN` | 15m | Re-alert the same condition after this long |
 | `HOMEHASH_ALERT_INTERVAL` | 30s | Alert evaluation cadence |
+| `HOMEHASH_CONTROL` | false | Write access: settings changes + pause/resume |
+| `HOMEHASH_CONTROL_FREQ_MIN` / `HOMEHASH_CONTROL_FREQ_MAX` | 100 / 750 | Accepted ASIC frequency range (MHz) |
+| `HOMEHASH_CONTROL_VOLT_MIN` / `HOMEHASH_CONTROL_VOLT_MAX` | 900 / 1300 | Accepted core voltage range (mV) |
+
+### Miner control (optional, off by default)
+
+With `HOMEHASH_CONTROL=1`, each miner card gains **Pause/Resume** and
+**Settings** controls: stop or restart hashing, and change the ASIC frequency
+or core voltage. The firmware applies both live (no restart) and persists
+them, so a change survives reboots.
+
+homeHash clamps accepted values before they ever reach the device — the
+firmware itself would accept 1–65535 for both, which is no protection. The
+defaults (100–750 MHz, 900–1300 mV) are sane for Gamma-family boards; widen
+them only if you know your silicon.
+
+A few things worth knowing before enabling:
+
+- **It's your hardware at your own risk.** Increasing frequency/voltage raises
+  board temperature and the invalid-share rate; go up in small steps and watch
+  the dashboard, and expect the firmware's overheat safe-mode to auto-reduce
+  settings if a board runs hot.
+- **No authentication.** When control is on, anyone on your LAN can pause your
+  miners — the whole HTTP surface is deliberately unauthenticated and
+  LAN-only. Don't run homeHash on a shared network, and don't port-forward it.
+
+Both features use the same guard rails as everything else: see
+`docs/API.md` (`POST /api/miners/{id}/settings`, `/pause`, `/resume`).
 
 ### Discovery & alerts
 
@@ -101,13 +129,21 @@ type MinerDriver interface {
 type InfoUpdater interface {
     UpdateInfo(miner Miner) (Miner, error)
 }
+
+// Drivers may implement ControlUpdater to offer write access (settings,
+// pause, resume) behind HOMEHASH_CONTROL.
+type ControlUpdater interface {
+    ApplySettings(miner Miner, patch SettingsPatch) error
+    Pause(miner Miner) error
+    Resume(miner Miner) error
+}
 ```
 
 ### Current Drivers
 
 | Driver | Status | Tested Hardware |
 |--------|--------|-----------------|
-| Bitaxe | ✅ Implemented | Gamma 601 (axeOS v2.13.0), GammaTurbo (axeOS v2.12.0) |
+| Bitaxe | ✅ Implemented | Gamma 601 (axeOS v2.15.3), GammaTurbo (axeOS v2.12.0) |
 | NerdMiner | 📝 Stubbed | Needs community contribution |
 
 ### Data Model
@@ -133,6 +169,9 @@ type Stats struct {
     PowerW       float64   // Power draw in watts
     Uptime       time.Duration
     Timestamp    time.Time
+    Frequency    float64   // Configured ASIC frequency (MHz)
+    CoreVoltageMv int      // Configured core voltage (mV)
+    Paused       bool      // True while mining is paused
 }
 ```
 
@@ -180,6 +219,8 @@ on an offline LAN. It shows:
   tooltip, legend, and a table view for accessibility
 - **Miner cards** — live sparkline, hash rate, temperature meter, power, fan,
   shares, uptime, pool URL, online status
+- **Miner control** (optional, `HOMEHASH_CONTROL=1`) — pause/resume mining and
+  change frequency/voltage per miner, with an old → new preview before apply
 - **Live updates** via Server-Sent Events (`/api/events`); connection chip
   shows when the stream reconnects
 
@@ -198,6 +239,8 @@ The full contract lives in [docs/API.md](docs/API.md). Quick list:
 - `GET /api/stats` — Aggregate farm stats (hash rate, power, efficiency)
 - `GET /api/events` — Server-Sent Events live snapshots
 - `GET /api/health` — Service health check
+- `POST /api/miners/{id}/settings` — Change frequency / core voltage (HOMEHASH_CONTROL)
+- `POST /api/miners/{id}/pause` / `POST /api/miners/{id}/resume` — Stop/restart hashing (HOMEHASH_CONTROL)
 
 ### Response Format
 
@@ -337,6 +380,7 @@ response, so new models appear without any mapping table. Driver unit notes in
 - [x] Alerting (offline / recovery / temperature, log + Discord webhook)
 - [x] Alerts surfaced in the dashboard (bell panel, unread badge)
 - [x] CSV/JSON history export
+- [x] Miner control: frequency/voltage settings + pause/resume (opt-in, off by default)
 - [x] Release binaries for Linux/macOS/Windows (amd64 + arm64)
 - [ ] Email notifier
 - [ ] NerdMiner support (needs hardware donation or community PR)

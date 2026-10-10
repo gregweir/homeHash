@@ -105,6 +105,31 @@
         <span id="footer-updated"></span>
     </footer>
 
+    <!-- Miner settings dialog: shown only when write access is on
+         (HOMEHASH_CONTROL=1); each miner card gains Pause/Resume + Settings
+         buttons in that mode. -->
+    <dialog id="miner-dialog" aria-labelledby="dlg-title">
+        <h2 id="dlg-title">Miner settings</h2>
+        <p class="dlg-meta" id="dlg-miner-meta"></p>
+        <label class="dlg-field">
+            ASIC frequency (MHz)
+            <input id="dlg-frequency" type="number" step="1" inputmode="numeric" autocomplete="off">
+        </label>
+        <label class="dlg-field">
+            Core voltage (mV)
+            <input id="dlg-voltage" type="number" step="1" inputmode="numeric" autocomplete="off">
+        </label>
+        <p class="dlg-preview" id="dlg-preview" aria-live="polite"></p>
+        <p class="dlg-error" id="dlg-error" hidden></p>
+        <div class="dlg-actions">
+            <button type="button" id="dlg-cancel">Cancel</button>
+            <button type="button" id="dlg-apply" class="primary">Apply</button>
+        </div>
+    </dialog>
+
+    <!-- Transient feedback for control actions (pause/resume/settings). -->
+    <div id="toast" role="status" hidden></div>
+
     <script src="/static/js/app.js" defer></script>
 </body>
 </html>

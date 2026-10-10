@@ -138,7 +138,7 @@ func main() {
 	// HTTP surface
 	mux := http.NewServeMux()
 
-	apiHandler := api.New(st)
+	apiHandler := api.New(st, api.WithConfig(cfg), api.WithRegistry(registry), api.WithVersion(version))
 	mux.Handle("/api/", apiHandler)
 
 	webRoot, err := fs.Sub(webFS, ".")

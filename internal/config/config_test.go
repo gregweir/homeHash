@@ -71,3 +71,37 @@ func TestAlertConfigFromEnv(t *testing.T) {
 		t.Fatalf("Miners = %v", cfg.Miners)
 	}
 }
+
+func TestControlDefaultsOff(t *testing.T) {
+	cfg := Default()
+
+	// Write access must be opt-in: a monitor ships read-only.
+	if cfg.ControlEnabled {
+		t.Fatal("control should default to disabled")
+	}
+	if cfg.ControlFreqMin != 100 || cfg.ControlFreqMax != 750 {
+		t.Fatalf("freq clamp = [%v, %v]", cfg.ControlFreqMin, cfg.ControlFreqMax)
+	}
+	if cfg.ControlVoltMin != 900 || cfg.ControlVoltMax != 1300 {
+		t.Fatalf("voltage clamp = [%d, %d] mV", cfg.ControlVoltMin, cfg.ControlVoltMax)
+	}
+}
+
+func TestControlFromEnv(t *testing.T) {
+	t.Setenv("HOMEHASH_CONTROL", "true")
+	t.Setenv("HOMEHASH_CONTROL_FREQ_MIN", "200")
+	t.Setenv("HOMEHASH_CONTROL_FREQ_MAX", "700")
+	t.Setenv("HOMEHASH_CONTROL_VOLT_MIN", "950")
+	t.Setenv("HOMEHASH_CONTROL_VOLT_MAX", "1250")
+
+	cfg := Default()
+	if !cfg.ControlEnabled {
+		t.Fatal("HOMEHASH_CONTROL=true ignored")
+	}
+	if cfg.ControlFreqMin != 200 || cfg.ControlFreqMax != 700 {
+		t.Fatalf("freq clamp from env = [%v, %v]", cfg.ControlFreqMin, cfg.ControlFreqMax)
+	}
+	if cfg.ControlVoltMin != 950 || cfg.ControlVoltMax != 1250 {
+		t.Fatalf("voltage clamp from env = [%d, %d]", cfg.ControlVoltMin, cfg.ControlVoltMax)
+	}
+}

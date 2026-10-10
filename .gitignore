@@ -1,6 +1,6 @@
 # Build artifacts
-homeHash
-homeHash.test
+/homeHash
+/homeHash.test
 *.test
 
 # Local runtime state

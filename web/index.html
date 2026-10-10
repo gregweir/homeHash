@@ -18,6 +18,24 @@
                 <span class="dot"></span>
                 <span id="connection-label">Connecting…</span>
             </span>
+            <!-- Alerts: bell with unread badge, dropdown panel of recent alerts -->
+            <div class="alerts-wrap" id="alerts-wrap">
+                <button class="bell-btn" id="alerts-toggle" type="button"
+                        aria-expanded="false" aria-label="Recent alerts">
+                    <svg class="bell-icon" viewBox="0 0 24 24" width="18" height="18"
+                         fill="none" stroke="currentColor" stroke-width="1.8"
+                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+                    </svg>
+                    <span class="bell-badge" id="alerts-badge" hidden></span>
+                </button>
+                <div class="alerts-panel" id="alerts-panel" hidden>
+                    <div class="alerts-head">Recent alerts</div>
+                    <ul class="alerts-list" id="alerts-list"></ul>
+                    <p class="alerts-empty" id="alerts-empty" hidden>No alerts recorded yet.</p>
+                </div>
+            </div>
             <button class="theme-btn" id="theme-toggle" type="button">Theme</button>
         </div>
     </header>

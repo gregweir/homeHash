@@ -323,3 +323,96 @@ func TestListMinersReturnsStoredMinersWithStats(t *testing.T) {
 		}
 	}
 }
+
+func TestListAlerts(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer s.Close()
+
+	now := time.Now()
+	newest := base.Alert{
+		Time: now, Kind: base.KindOffline, Level: base.LevelCritical,
+		MinerID: "bitaxe-192-168-1-11", MinerIP: "192.168.1.11",
+		Model: "Bitaxe GammaTurbo", Message: "miner offline: last poll 10m0s ago",
+	}
+	older := base.Alert{
+		Time: now.Add(-time.Minute), Kind: base.KindTemperature, Level: base.LevelWarning,
+		MinerID: "bitaxe-192-168-1-10", MinerIP: "192.168.1.10",
+		Model: "Bitaxe Gamma 601", Message: "temperature 80.5°C above 75°C threshold",
+	}
+	for _, a := range []base.Alert{newest, older} {
+		if err := s.AddAlert(a); err != nil {
+			t.Fatalf("AddAlert: %v", err)
+		}
+	}
+
+	h := New(s)
+
+	// Plain fetch: newest first, alert view fields present.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/alerts", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/alerts: status %d", rec.Code)
+	}
+	var got struct {
+		Alerts []struct {
+			Time    time.Time `json:"time"`
+			Kind    string    `json:"kind"`
+			Level   string    `json:"level"`
+			MinerID string    `json:"miner_id"`
+			MinerIP string    `json:"miner_ip"`
+			Model   string    `json:"model"`
+			Message string    `json:"message"`
+		} `json:"alerts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Alerts) != 2 {
+		t.Fatalf("want 2 alerts, got %d", len(got.Alerts))
+	}
+	first, second := got.Alerts[0], got.Alerts[1]
+	if first.Kind != "offline" || first.MinerID != newest.MinerID ||
+		first.MinerIP != newest.MinerIP || first.Model != newest.Model ||
+		first.Message != newest.Message {
+		t.Fatalf("first alert = %+v, want newest %v", first, newest)
+	}
+	if first.Level != "critical" || second.Level != "warning" {
+		t.Fatalf("levels = %q, %q", first.Level, second.Level)
+	}
+	if first.Time.Before(second.Time) {
+		t.Fatalf("alerts not newest first: %v before %v", first.Time, second.Time)
+	}
+
+	// ?limit= caps the list.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/alerts?limit=1", nil))
+	var limited struct {
+		Alerts []json.RawMessage `json:"alerts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &limited); err != nil {
+		t.Fatalf("decode limited: %v", err)
+	}
+	if len(limited.Alerts) != 1 {
+		t.Fatalf("limit=1: want 1 alert, got %d", len(limited.Alerts))
+	}
+}
+
+func TestListAlertsEmpty(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer s.Close()
+
+	rec := httptest.NewRecorder()
+	New(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/alerts", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"alerts":[]`) {
+		t.Fatalf("want empty alerts array, got %s", rec.Body.String())
+	}
+}

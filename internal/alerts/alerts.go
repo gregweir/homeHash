@@ -12,34 +12,26 @@ import (
 	"github.com/gregweir/homeHash/internal/drivers/base"
 )
 
-// Kind names the condition an alert reports.
-type Kind string
-
-const (
-	KindOffline       Kind = "offline"
-	KindTemperature   Kind = "temperature"
-	KindRecovered     Kind = "recovered"
-	KindTempRecovered Kind = "temp-recovered"
+// The alert shape lives in base (store, dashboard, and evaluator all share
+// it); these aliases keep the package's own names.
+type (
+	Kind  = base.AlertKind
+	Level = base.AlertLevel
 )
 
-// Level is an alert's severity.
-type Level string
-
 const (
-	LevelInfo     Level = "info"
-	LevelWarning  Level = "warning"
-	LevelCritical Level = "critical"
+	KindOffline       = base.KindOffline
+	KindTemperature   = base.KindTemperature
+	KindRecovered     = base.KindRecovered
+	KindTempRecovered = base.KindTempRecovered
+
+	LevelInfo     = base.LevelInfo
+	LevelWarning  = base.LevelWarning
+	LevelCritical = base.LevelCritical
 )
 
 // Alert is one notification about one miner.
-type Alert struct {
-	Kind    Kind
-	Level   Level
-	MinerID string
-	MinerIP string
-	Model   string
-	Message string
-}
+type Alert = base.Alert
 
 // Config holds the evaluator thresholds. Zero values fall back to defaults.
 type Config struct {
@@ -60,17 +52,12 @@ const (
 	tempCritical
 )
 
-// minerState persists one miner's alert state across evaluations.
-type minerState struct {
-	offline        bool
-	temp           tempLevel
-	lastTempNotify time.Time
-}
-
-// Store is the read surface the alert loop needs.
+// Store is the surface the alert loop needs: miners and their latest stats
+// to evaluate, and alert persistence to keep a history the dashboard serves.
 type Store interface {
 	Miners() ([]base.Miner, error)
 	LatestStats(minerID string) (*base.Stats, error)
+	AddAlert(base.Alert) error
 }
 
 // Evaluator turns miner state into alerts, remembering what it already
@@ -226,6 +213,12 @@ func Run(ctx context.Context, st Store, e *Evaluator, n Notifier, interval time.
 				continue
 			}
 			for _, a := range e.Evaluate(m, stats) {
+				// Persist regardless of notifier success: the alert
+				// happened, the dashboard should show it even if a
+				// webhook is down.
+				if err := st.AddAlert(a); err != nil {
+					log.Printf("alerts: persist alert (miner=%s): %v", a.MinerID, err)
+				}
 				if err := n.Notify(ctx, a); err != nil {
 					log.Printf("alerts: notify (kind=%s level=%s miner=%s): %v",
 						a.Kind, a.Level, a.MinerID, err)

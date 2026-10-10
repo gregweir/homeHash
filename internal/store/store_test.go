@@ -251,3 +251,43 @@ func TestRecordStatsAndHistory(t *testing.T) {
 		t.Errorf("cutoff query: want only %+v, got %+v", st2, hist)
 	}
 }
+
+func TestAddAlertAndList(t *testing.T) {
+	s := openTestStore(t)
+
+	now := time.Date(2026, 10, 9, 21, 0, 0, 0, time.UTC)
+	alerts := []base.Alert{
+		{Time: now, Kind: base.KindOffline, Level: base.LevelCritical,
+			MinerID: "m2", MinerIP: "192.168.1.11", Model: "GammaTurbo", Message: "miner offline"},
+		{Time: now.Add(-time.Minute), Kind: base.KindTemperature, Level: base.LevelWarning,
+			MinerID: "m1", MinerIP: "192.168.1.10", Model: "Gamma 601", Message: "temperature 80.0°C"},
+	}
+	for _, a := range alerts {
+		if err := s.AddAlert(a); err != nil {
+			t.Fatalf("AddAlert: %v", err)
+		}
+	}
+
+	got, err := s.ListAlerts(10)
+	if err != nil {
+		t.Fatalf("ListAlerts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 alerts, got %d", len(got))
+	}
+	// Newest first, with the miner's model and IP kept for display.
+	if got[0].Kind != base.KindOffline || got[0].MinerID != "m2" {
+		t.Fatalf("first alert = %+v, want the newest", got[0])
+	}
+	if got[0].MinerIP != "192.168.1.11" || got[0].Model != "GammaTurbo" {
+		t.Fatalf("first alert identity = ip %q model %q", got[0].MinerIP, got[0].Model)
+	}
+	if !got[1].Time.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("second alert time = %v, want %v", got[1].Time, now.Add(-time.Minute))
+	}
+
+	only, err := s.ListAlerts(1)
+	if err != nil || len(only) != 1 || only[0].Kind != base.KindOffline {
+		t.Fatalf("limit 1 broken: %v %+v", err, only)
+	}
+}

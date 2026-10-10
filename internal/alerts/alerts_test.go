@@ -292,3 +292,41 @@ func openTestStore(t *testing.T) *store.Store {
 	t.Cleanup(func() { st.Close() })
 	return st
 }
+
+func TestRunLoopPersistsAlerts(t *testing.T) {
+	st := openTestStore(t)
+
+	now := time.Now()
+	if err := st.UpsertMiner(onlineMiner(now)); err != nil {
+		t.Fatalf("UpsertMiner: %v", err)
+	}
+	if err := st.RecordStats("m1", base.Stats{TemperatureC: 90, Timestamp: now}); err != nil {
+		t.Fatalf("RecordStats: %v", err)
+	}
+
+	rec := &recorder{}
+	done := make(chan struct{})
+	rec.after = func() { close(done) }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go Run(ctx, st, evalWith(func() time.Time { return time.Now() }), rec, 10*time.Millisecond)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no alert within 2s")
+	}
+
+	// The alert loop writes the alert to the store as history, too.
+	stored, err := st.ListAlerts(10)
+	if err != nil {
+		t.Fatalf("ListAlerts: %v", err)
+	}
+	if len(stored) != 1 || stored[0].Kind != KindTemperature || stored[0].Level != LevelCritical {
+		t.Fatalf("stored alerts = %+v, want one temperature critical", stored)
+	}
+	if stored[0].Time.IsZero() {
+		t.Fatal("stored alert has zero time")
+	}
+}

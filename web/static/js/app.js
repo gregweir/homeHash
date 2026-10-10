@@ -758,3 +758,127 @@ window.addEventListener("resize", () => {
   loadHistory(state.rangeHours);
   startSSE();
 })();
+/* ---------- alerts bell + panel ---------- */
+
+const ALERTS_SEEN_KEY = "homehash.alertsSeen";
+const alertsUi = { items: [], open: false };
+
+function seenCutoff() {
+  // Per-viewer convenience only: which alert the viewer last read.
+  try { return localStorage.getItem(ALERTS_SEEN_KEY) || ""; }
+  catch (err) { return ""; }
+}
+
+function markAlertsSeen() {
+  // newest item's timestamp becomes the read marker (empty list = nothing to mark)
+  if (!alertsUi.items.length) return;
+  try { localStorage.setItem(ALERTS_SEEN_KEY, alertsUi.items[0].time); }
+  catch (err) { /* badge just stays as-is without storage */ }
+}
+
+function kindLabel(kind) {
+  switch (kind) {
+    case "offline": return "Offline";
+    case "temperature": return "Temperature";
+    case "recovered": return "Recovered";
+    case "temp-recovered": return "Recovered";
+    default: return kind;
+  }
+}
+
+function fmtAlertTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+}
+
+function updateAlertBadge() {
+  const badge = $("alerts-badge");
+  if (alertsUi.open) {
+    markAlertsSeen();
+  }
+  const cutoff = seenCutoff();
+  const unread = alertsUi.items.filter((a) => a.time > cutoff).length;
+  if (!unread || alertsUi.open) {
+    badge.hidden = true;
+    badge.textContent = "";
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = unread > 9 ? "9+" : String(unread);
+}
+
+function renderAlerts() {
+  const list = $("alerts-list");
+  list.replaceChildren();
+  $("alerts-empty").hidden = alertsUi.items.length > 0;
+  alertsUi.items.forEach((a) => {
+    const item = document.createElement("li");
+    item.className = "alert-item " + a.level;
+
+    const dot = document.createElement("span");
+    dot.className = "alert-dot";
+
+    const body = document.createElement("div");
+    body.className = "alert-body";
+
+    const what = document.createElement("span");
+    what.className = "alert-what";
+    what.textContent = (a.model || a.miner_ip || "homeHash") + " · " + kindLabel(a.kind);
+
+    const msg = document.createElement("p");
+    msg.className = "alert-msg";
+    msg.textContent = a.message || "";
+
+    body.append(what, msg);
+
+    const when = document.createElement("span");
+    when.className = "alert-when";
+    when.textContent = fmtAlertTime(a.time);
+
+    item.append(dot, body, when);
+    list.append(item);
+  });
+}
+
+async function refreshAlerts() {
+  try {
+    const res = await fetch("/api/alerts?limit=50");
+    if (!res.ok) return;
+    const body = await res.json();
+    alertsUi.items = body.alerts || [];
+    renderAlerts();
+    updateAlertBadge();
+  } catch (err) {
+    console.error("alerts refresh failed", err);
+  }
+}
+
+function setAlertsOpen(open) {
+  alertsUi.open = open;
+  const panel = $("alerts-panel");
+  panel.hidden = !open;
+  $("alerts-toggle").setAttribute("aria-expanded", String(open));
+  if (open) updateAlertBadge(); // opening reads the panel: mark as seen
+}
+
+$("alerts-toggle").addEventListener("click", () => {
+  setAlertsOpen(!alertsUi.open);
+  if (alertsUi.open) refreshAlerts();
+});
+
+document.addEventListener("click", (e) => {
+  if (alertsUi.open && !e.target.closest("#alerts-wrap")) setAlertsOpen(false);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && alertsUi.open) {
+    setAlertsOpen(false);
+    $("alerts-toggle").focus();
+  }
+});
+
+refreshAlerts();
+setInterval(refreshAlerts, 30000);

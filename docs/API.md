@@ -143,6 +143,43 @@ shape as the /api/miners entries>] }`
 
 Headers: `Content-Type: text/event-stream`, `Cache-Control: no-store`.
 
+### GET /api/alerts
+
+Recent alerts raised by the alerting loop (offline miners, temperature
+thresholds, recoveries), newest first. The dashboard's bell panel consumes
+this.
+
+Query parameters:
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| limit | 50 | Max alerts returned (clamped to 1-1000) |
+
+```json
+{
+  "alerts": [
+    {
+      "time": "2026-10-09T22:01:14.974Z",
+      "kind": "offline",
+      "level": "critical",
+      "miner_id": "bitaxe-192-168-1-11",
+      "miner_ip": "192.168.1.11",
+      "model": "Bitaxe GammaTurbo",
+      "message": "miner offline: last poll 10m0s ago"
+    },
+    {
+      "time": "2026-10-09T21:30:02.100Z",
+      "kind": "recovered",
+      "level": "info",
+      "miner_id": "bitaxe-192-168-1-11",
+      "miner_ip": "192.168.1.11",
+      "model": "Bitaxe GammaTurbo",
+      "message": "back online"
+    }
+  ]
+}
+```
+
 ## Data Types
 
 ### Miner
@@ -171,6 +208,18 @@ Headers: `Content-Type: text/event-stream`, `Cache-Control: no-store`.
 | power_w | float | Current power draw in watts (0 if unknown) |
 | uptime_seconds | int | Current uptime in seconds |
 | timestamp | ISO 8601 | When stats were collected |
+
+### Alert
+
+| Field | Type | Description |
+|-------|------|-------------|
+| time | ISO 8601 | When the alert fired (nano precision) |
+| kind | string | "offline", "temperature", "recovered", "temp-recovered" |
+| level | string | "info", "warning", "critical" |
+| miner_id | string | Miner the alert is about |
+| miner_ip | string | Last known IP of that miner |
+| model | string | Hardware model, if known |
+| message | string | Human-readable detail |
 
 ## Error Responses
 

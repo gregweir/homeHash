@@ -41,6 +41,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/miners", h.ListMiners)
 	mux.HandleFunc("GET /api/miners/{id}", h.GetMiner)
 	mux.HandleFunc("GET /api/miners/{id}/history", h.MinerHistory)
+	mux.HandleFunc("GET /api/alerts", h.ListAlerts)
 	mux.HandleFunc("GET /api/stats", h.Stats)
 	mux.HandleFunc("GET /api/events", h.Events)
 }
@@ -179,6 +180,50 @@ func (h *Handler) MinerHistory(w http.ResponseWriter, r *http.Request) {
 		"hours":    hours,
 		"data":     points,
 	})
+}
+
+// alertView is the JSON shape of one stored alert. Times are RFC3339.
+type alertView struct {
+	Time    string `json:"time"`
+	Kind    string `json:"kind"`
+	Level   string `json:"level"`
+	MinerID string `json:"miner_id"`
+	MinerIP string `json:"miner_ip"`
+	Model   string `json:"model"`
+	Message string `json:"message"`
+}
+
+// ListAlerts returns recent alerts, newest first. ?limit caps the list
+// (default 50).
+func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
+
+	alerts, err := h.store.ListAlerts(limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	views := make([]alertView, 0, len(alerts))
+	for _, a := range alerts {
+		views = append(views, alertView{
+			Time:    a.Time.UTC().Format(time.RFC3339Nano),
+			Kind:    string(a.Kind),
+			Level:   string(a.Level),
+			MinerID: a.MinerID,
+			MinerIP: a.MinerIP,
+			Model:   a.Model,
+			Message: a.Message,
+		})
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"alerts": views})
 }
 
 // lookupMiner resolves the {id} path value, writing a 404 when unknown.

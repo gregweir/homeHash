@@ -78,7 +78,9 @@ successful poll is older than `HOMEHASH_ALERT_OFFLINE_AFTER` alerts offline
 temperature above `TEMP_WARN` warns and above `TEMP_CRITICAL` escalates to
 critical, repeating only after `ALERT_COOLDOWN`, and recovers once below
 range. Alerts go to the process log by default, or to Discord when
-`HOMEHASH_ALERT_WEBHOOK_URL` is set.
+`HOMEHASH_ALERT_WEBHOOK_URL` is set, and every alert is kept in the store:
+the dashboard's bell shows an unread badge and lists recent alerts (`GET
+/api/alerts`, see `docs/API.md`).
 
 ## Architecture
 

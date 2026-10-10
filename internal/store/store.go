@@ -53,6 +53,17 @@ func Open(path string) (*Store, error) {
 		);
 		CREATE INDEX IF NOT EXISTS idx_stats_history_miner_ts
 			ON stats_history(miner_id, timestamp);
+		CREATE TABLE IF NOT EXISTS alerts (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			time      TEXT NOT NULL,
+			miner_id  TEXT,
+			miner_ip  TEXT,
+			model     TEXT,
+			kind      TEXT NOT NULL,
+			level     TEXT NOT NULL,
+			message   TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_alerts_time ON alerts(time DESC);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -63,6 +74,14 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := addColumnIfMissing(db, "stats_history", "power_w", "REAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := addColumnIfMissing(db, "alerts", "miner_ip", "TEXT"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := addColumnIfMissing(db, "alerts", "model", "TEXT"); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -237,6 +256,57 @@ func (s *Store) LatestStats(minerID string) (*base.Stats, error) {
 		return nil, fmt.Errorf("parse timestamp: %w", err)
 	}
 	return &st, nil
+}
+
+// AddAlert persists one alert. Alerts are append-only history: the loop
+// writes them as they fire, and the dashboard serves the newest first.
+func (s *Store) AddAlert(a base.Alert) error {
+	if a.Time.IsZero() {
+		a.Time = time.Now()
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO alerts (time, miner_id, miner_ip, model, kind, level, message)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		a.Time.Format(time.RFC3339Nano), a.MinerID, a.MinerIP, a.Model,
+		a.Kind, a.Level, a.Message)
+	if err != nil {
+		return fmt.Errorf("add alert: %w", err)
+	}
+	return nil
+}
+
+// ListAlerts returns up to limit alerts, newest first.
+func (s *Store) ListAlerts(limit int) ([]base.Alert, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(`
+		SELECT time, kind, level,
+		       COALESCE(miner_id, ''), COALESCE(miner_ip, ''),
+		       COALESCE(model, ''), COALESCE(message, '')
+		FROM alerts ORDER BY time DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list alerts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []base.Alert
+	for rows.Next() {
+		var (
+			a       base.Alert
+			timeStr string
+		)
+		if err := rows.Scan(&timeStr, &a.Kind, &a.Level,
+			&a.MinerID, &a.MinerIP, &a.Model, &a.Message); err != nil {
+			return nil, fmt.Errorf("scan alert: %w", err)
+		}
+		a.Time, err = time.Parse(time.RFC3339Nano, timeStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse alert time: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // History returns a miner's stat points recorded at or after since, oldest first.

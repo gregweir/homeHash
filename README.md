@@ -3,29 +3,57 @@
 [![CI](https://github.com/gregweir/homeHash/actions/workflows/ci.yml/badge.svg)](https://github.com/gregweir/homeHash/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A lightweight, local-only monitoring dashboard for home Bitcoin miners.
+A lightweight monitoring dashboard for home Bitcoin miners, running on your local network.
 
 ![homeHash dashboard showing farm hash rate, power, efficiency, hash-rate history and per-miner cards](docs/img/dashboard.png)
 
 ## Purpose
 
-homeHash discovers Bitaxe miners on your local network and shows whether they're actually mining — hash rate, temperature, pool connection, uptime. No cloud accounts. No remote servers. Just a simple dashboard that runs on your LAN.
+homeHash discovers Bitaxe miners on your local network and shows hash rate,
+temperature, pool connection and uptime. Monitoring and history run on your
+LAN without a cloud account. Optional Discord and email alerts send
+information to the services you configure.
 
 ## Philosophy
 
-- **Local-only:** Data never leaves your network
+- **Local by default:** Monitoring and history stay on your network. Optional
+  Discord and email alerts send information to the services you configure.
 - **Single binary:** One file to run, no dependencies
 - **Zero config:** Auto-discovers miners via mDNS
 - **Anti-cloud:** The opposite of Hive OS and Braiins OS — built for the home miner with 1–10 units, not the industrial farm with 1000+
 
 ## Status
 
-Early development. Bitaxe Gamma/Ultra support implemented and tested against
-real hardware. The dashboard, SQLite history, live SSE stream, network
-discovery, and alerting are all working; architecture supports additional
-miners via driver plugins.
+Early development. The Bitaxe driver is implemented, with recorded hardware
+tests on Gamma 601 and GammaTurbo. See [Current Drivers](#current-drivers)
+for the tested firmware versions. The dashboard, SQLite history, live SSE
+stream, network discovery and alerting are working; additional miners need
+compatible APIs or new drivers.
 
-## Quick Start
+Reports from owners of other Bitaxe models and related home-mining devices
+are welcome. See [Compatibility reports and contributions](#compatibility-reports-and-contributions).
+
+## Download and run
+
+[Download the latest release](https://github.com/gregweir/homeHash/releases/latest).
+Prebuilt binaries are available for Windows, macOS and Linux, in amd64 and
+arm64 versions. You do not need Go to use a prebuilt binary.
+
+1. Read [Unsigned downloads and security warnings](#unsigned-downloads-and-security-warnings).
+2. Choose the archive for your computer's operating system and processor.
+   macOS archives use `darwin` in the filename; Apple silicon uses `arm64`,
+   and Intel Macs use `amd64`.
+3. Compare the archive's SHA-256 checksum with `checksums.txt` from the same
+   release, then extract it. See [Installation](#installation) for launch
+   instructions.
+4. Run homeHash on your trusted private network and open
+   http://localhost:8080 in your browser.
+
+The dashboard has no authentication or TLS. Do not expose its port to the
+internet or run it on a shared or untrusted network. Miner control is off by
+default; leave it off for initial checks and unverified hardware.
+
+## Quick Start (from source)
 
 ```bash
 # Build
@@ -301,7 +329,7 @@ The full contract lives in [docs/API.md](docs/API.md). Quick list:
 
 ## Bitaxe API
 
-**Tested against real hardware:** Gamma 601 on axeOS v2.13.0 and GammaTurbo on
+**Initial hardware tests:** Gamma 601 on axeOS v2.13.0 and GammaTurbo on
 axeOS v2.12.0. Both expose everything on one endpoint:
 
 - `GET /api/system/info` — device info **and** current mining stats in one
@@ -342,9 +370,49 @@ The driver polls only this endpoint; older documentation referencing
 ### Prebuilt binaries (easiest)
 
 Grab the archive for your platform from the
-[latest release](https://github.com/gregweir/homeHash/releases/latest),
-unpack it, and run the binary. It discovers miners on its own; add
-`HOMEHASH_MINER` if you'd rather seed IPs explicitly.
+[latest release](https://github.com/gregweir/homeHash/releases/latest).
+Read the security notes below and check the archive's SHA-256 checksum
+against `checksums.txt` from that release before extracting it.
+
+On macOS or Linux, open a terminal in the extracted folder and run
+`./homeHash`. On Windows, follow the [Windows instructions](#windows) below.
+Then open http://localhost:8080. The program discovers miners on its own;
+add `HOMEHASH_MINER` if you'd rather seed IPs explicitly.
+
+### Unsigned downloads and security warnings
+
+homeHash is free and open source. The project budget does not currently
+cover paid publisher signing.
+
+The current [release workflow](.github/workflows/release.yml) builds and
+packages the program without adding a verified Windows publisher signature
+or an Apple Developer ID signature. It does not submit macOS builds for
+Apple notarization.
+
+- **Windows:** You may see a SmartScreen warning such as "Windows protected
+  your PC", an unrecognized-app message or an unknown publisher. New files
+  and files without a trusted publisher signature may not have an established
+  reputation. Some Windows configurations can block them entirely. See
+  [Microsoft's explanation of SmartScreen reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+- **macOS:** You may see a message that the developer cannot be verified or
+  that Apple cannot check the program for malicious software. See
+  [Apple's guidance on safely opening apps](https://support.apple.com/en-ca/102445).
+
+An identity or reputation warning does not establish that a program is safe.
+It is also different from a security tool reporting malware, damage or
+tampering. If you see one of those reports, stop and investigate rather than
+overriding it.
+
+Download only from this repository's release page. A matching SHA-256
+checksum confirms that your archive matches the bytes listed in that
+release; it does not verify the publisher's identity or prove the program
+is safe. Keep your operating system's protections enabled. Use the official
+guidance above to understand a warning, and do not run the download if you
+are unsure.
+
+If you prefer to inspect the code and build it yourself, see
+[From Source](#from-source). Building from source also requires you to assess
+the code and its dependencies; it is not a safety guarantee.
 
 ### macOS and Linux (Homebrew)
 
@@ -355,10 +423,12 @@ brew install homehash
 
 ### Windows
 
-Download `homeHash_*_windows_amd64.zip`, extract it, and double-click
-`homeHash.exe` — then open http://localhost:8080. On first launch, Windows
-Firewall may ask permission for network discovery: allow it (only your local
-network is contacted).
+Download the Windows archive matching your computer: `homeHash_*_windows_amd64.zip`
+for x64 Windows or `homeHash_*_windows_arm64.zip` for ARM64 Windows. After checking the
+download as described above, extract it and double-click `homeHash.exe`,
+then open http://localhost:8080. On first launch, Windows Firewall may ask
+permission for network discovery. Allow access only on your trusted private
+network, not on public networks.
 
 ### From Source
 
@@ -398,7 +468,43 @@ make check   # build + vet + gofmt (zero diff) + all tests
 
 The Bitaxe driver reads the model from the device's own `/api/system/info`
 response, so new models appear without any mapping table. Driver unit notes in
-`internal/drivers/bitaxe/doc.go` record what real hardware confirmed.
+[`internal/drivers/bitaxe/bitaxe.go`](internal/drivers/bitaxe/bitaxe.go)
+record what real hardware confirmed.
+
+## Compatibility reports and contributions
+
+If you own another Bitaxe model or a related home-mining device, reports of
+what works and what does not work would help. Similar names or a familiar
+dashboard do not establish API compatibility. NerdMiner support is not yet
+implemented, and other devices may need a new driver.
+
+Start with monitoring only: leave `HOMEHASH_CONTROL` unset or `false`.
+Check the readings against the device's own interface. Do not enable
+homeHash's miner controls on hardware whose control support has not been
+verified. A successful monitoring test is not a control-safety test.
+
+For a compatibility report or bug report, [open an issue](https://github.com/gregweir/homeHash/issues)
+with:
+
+- The exact miner model and board revision, if known
+- Firmware name and version
+- Your computer's operating system, version and processor architecture
+- The homeHash version, available through `homeHash --version`
+- Whether automatic discovery worked or you needed to enter an address,
+  without posting the address itself
+- Which read-only readings matched the device's own interface, which were
+  missing or different, and the steps that reproduce a problem
+- Only the relevant, redacted configuration details or short log excerpts
+
+Replace IP and MAC addresses, private hostnames, pool account details and
+wallet addresses with placeholders. Never post passwords, API keys, webhook
+URLs, seed phrases, private keys or complete unredacted configuration files.
+Check screenshots for the same information before sharing them.
+
+Documentation corrections, compatibility reports, bug reports and pull
+requests are all welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development and testing process, and [LICENSE](LICENSE) for the MIT terms.
+New driver work should document the exact hardware and firmware tested.
 
 ## Roadmap
 
@@ -425,3 +531,20 @@ MIT License — see LICENSE file.
 Greg Weir ([Tartanleaf](https://www.tartanleaf.com/))
 
 Built by the author of the book *Bitcoin Mining with Bitaxe*.
+
+## Optional reading and owner resources
+
+homeHash provides observations and history. These optional resources help
+you put those readings into a wider setup and troubleshooting process:
+
+- [Bitcoin Mining with Bitaxe: Complete Guide to Open-Source ASIC Mining at Home](https://www.tartanleaf.com/bitcoin-mining-with-bitaxe/)
+  covers setup, operation, tuning, monitoring and recovery.
+- The [free Bitaxe Owner's Maintenance and Troubleshooting Pack](https://www.tartanleaf.com/bitaxe-owner-maintenance-pack/)
+  provides a baseline workflow and printable records. It is delivered by
+  email with opt-in Bitaxe updates.
+- [Bitaxe Community Updates](https://www.tartanleaf.com/bitcoin-mining-with-bitaxe-updates/)
+  and existing Tartanleaf Bitaxe articles are available without signup.
+
+You do not need to buy a book or join a mailing list to use homeHash or its
+documentation. Monitoring helps you understand your miner; it does not
+guarantee mining results.

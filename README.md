@@ -193,6 +193,8 @@ The full contract lives in [docs/API.md](docs/API.md). Quick list:
 - `GET /api/miners` — List all miners with latest stats
 - `GET /api/miners/{id}` — Single miner details + last 24h history
 - `GET /api/miners/{id}/history?hours=N` — Historical stats (1–168h)
+- `GET /api/miners/{id}/export/{csv,json}?hours=N` — Download history as CSV/JSON
+- `GET /api/alerts?limit=N` — Recent alerts, newest first
 - `GET /api/stats` — Aggregate farm stats (hash rate, power, efficiency)
 - `GET /api/events` — Server-Sent Events live snapshots
 - `GET /api/health` — Service health check
@@ -333,8 +335,10 @@ response, so new models appear without any mapping table. Driver unit notes in
 - [x] 24-hour SQLite history (WAL, 7-day window, SSE-friendly)
 - [x] Network discovery (mDNS + IP scan, verified, add-new-only)
 - [x] Alerting (offline / recovery / temperature, log + Discord webhook)
+- [x] Alerts surfaced in the dashboard (bell panel, unread badge)
+- [x] CSV/JSON history export
+- [x] Release binaries for Linux/macOS/Windows (amd64 + arm64)
 - [ ] Email notifier
-- [ ] CSV/JSON export
 - [ ] NerdMiner support (needs hardware donation or community PR)
 - [ ] Tailscale integration
 

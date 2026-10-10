@@ -6,9 +6,9 @@ import "time"
 type AlertKind string
 
 const (
-	KindOffline      AlertKind = "offline"
-	KindTemperature  AlertKind = "temperature"
-	KindRecovered    AlertKind = "recovered"
+	KindOffline       AlertKind = "offline"
+	KindTemperature   AlertKind = "temperature"
+	KindRecovered     AlertKind = "recovered"
 	KindTempRecovered AlertKind = "temp-recovered"
 )
 

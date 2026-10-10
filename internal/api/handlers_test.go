@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,18 +39,22 @@ func TestEventsStreamsSnapshotOnDataChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/events", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
+	// The handler streams into rec while the test polls rec.Body; wrap it in
+	// a lock so the race detector doesn't flag the (test-only) concurrent use.
+	lrec := &lockedRecorder{rec: rec}
 
 	done := make(chan struct{})
 	go func() {
-		h.ServeHTTP(rec, req)
+		h.ServeHTTP(lrec, req)
 		close(done)
 	}()
 
 	// Wait until at least one event (or two — proving data change) is streamed.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Count(rec.Body.String(), "data: ") >= 1 &&
-			strings.Contains(rec.Body.String(), `"total_hashrate_gh":1234.5`) {
+		bodyNow := lrec.body()
+		if strings.Count(bodyNow, "data: ") >= 1 &&
+			strings.Contains(bodyNow, `"total_hashrate_gh":1234.5`) {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -61,8 +66,8 @@ func TestEventsStreamsSnapshotOnDataChange(t *testing.T) {
 		t.Fatal("handler did not return after context cancel")
 	}
 
-	body := rec.Body.String()
-	if err := checkContentType(rec.Header().Get("Content-Type"), "text/event-stream"); err != nil {
+	body := lrec.body()
+	if err := checkContentType(lrec.Header().Get("Content-Type"), "text/event-stream"); err != nil {
 		t.Errorf("content type: %v", err)
 	}
 	if !strings.Contains(body, `"miners"`) {
@@ -82,6 +87,46 @@ func checkContentType(got, wantBase string) error {
 		return errors.New("got " + got + ", want base " + wantBase)
 	}
 	return nil
+}
+
+// lockedRecorder serializes reads of the recording from the test with the
+// handler-goroutine writes into it.
+type lockedRecorder struct {
+	mu  sync.Mutex
+	rec *httptest.ResponseRecorder
+}
+
+func (l *lockedRecorder) Header() http.Header {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rec.Header()
+}
+
+func (l *lockedRecorder) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rec.Write(p)
+}
+
+func (l *lockedRecorder) WriteHeader(code int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.rec.WriteHeader(code)
+}
+
+// Flush forwards to the recorder; ServeHTTP requires a Flusher.
+func (l *lockedRecorder) Flush() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if f, ok := any(l.rec).(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (l *lockedRecorder) body() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rec.Body.String()
 }
 
 func min(a int, b int) int {
@@ -414,5 +459,104 @@ func TestListAlertsEmpty(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"alerts":[]`) {
 		t.Fatalf("want empty alerts array, got %s", rec.Body.String())
+	}
+}
+
+func TestExportHistoryJSON(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer s.Close()
+
+	ts := time.Date(2026, 10, 9, 20, 0, 0, 0, time.UTC)
+	m := base.Miner{ID: "bitaxe-192-168-1-10", IP: "192.168.1.10", Driver: "bitaxe", Model: "Bitaxe Gamma 601"}
+	if err := s.UpsertMiner(m); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := s.RecordStats(m.ID, base.Stats{
+			HashRateGH:   1200 + float64(i),
+			Accepted:     int64(100 + i),
+			Rejected:     int64(i),
+			TemperatureC: 55 + float64(i),
+			FanSpeed:     60 + i,
+			PowerW:       20 + float64(i),
+			Uptime:       time.Duration(i) * time.Minute,
+			Timestamp:    ts.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatalf("RecordStats: %v", err)
+		}
+	}
+
+	h := New(s)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/miners/"+m.ID+"/export/json", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export json: status %d body %s", rec.Code, rec.Body.String())
+	}
+	checkContentType(rec.Header().Get("Content-Type"), "application/json")
+	if rec.Header().Get("Content-Disposition") == "" {
+		t.Error("json export missing Content-Disposition")
+	}
+
+	var got struct {
+		MinerID string `json:"miner_id"`
+		Data    []struct {
+			Timestamp     string  `json:"timestamp"`
+			HashRateGH    float64 `json:"hash_rate_gh"`
+			PowerW        float64 `json:"power_w"`
+			TemperatureC  float64 `json:"temperature_c"`
+			FanSpeed      int     `json:"fan_speed"`
+			Accepted      int     `json:"accepted"`
+			Rejected      int     `json:"rejected"`
+			UptimeSeconds int64   `json:"uptime_seconds"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.MinerID != m.ID || len(got.Data) != 3 {
+		t.Fatalf("body = miner %s with %d points", got.MinerID, len(got.Data))
+	}
+	if got.Data[0].HashRateGH != 1200 || got.Data[2].HashRateGH != 1202 {
+		t.Fatalf("points = %+v", got.Data)
+	}
+	if got.Data[1].UptimeSeconds != 60 {
+		t.Fatalf("uptime = %d, want 60", got.Data[1].UptimeSeconds)
+	}
+
+	// CSV: same data, header row + points, oldest first.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/miners/"+m.ID+"/export/csv?hours=24", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export csv: status %d body %s", rec.Code, rec.Body.String())
+	}
+	checkContentType(rec.Header().Get("Content-Type"), "text/csv")
+	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("csv lines = %d, want header + 3 points: %q", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "timestamp") || !strings.Contains(lines[0], "hash_rate_gh") ||
+		!strings.Contains(lines[0], "power_w") || !strings.Contains(lines[0], "temperature_c") ||
+		!strings.Contains(lines[0], "fan_speed") || !strings.Contains(lines[0], "uptime_seconds") {
+		t.Fatalf("csv header wrong: %q", lines[0])
+	}
+	if strings.Contains(lines[1], "1200,") && !strings.HasPrefix(lines[1], "2026-10-09T20:00:00Z") {
+		t.Fatalf("csv first row = %q, want oldest point first", lines[1])
+	}
+
+	// Bad format: 400, not a panic or 404.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/miners/"+m.ID+"/export/xml", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad format: want 400, got %d", rec.Code)
+	}
+
+	// Unknown miner: 404.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/miners/no-such/export/csv", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown miner: want 404, got %d", rec.Code)
 	}
 }

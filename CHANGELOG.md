@@ -3,6 +3,23 @@
 All notable changes to homeHash are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-10-09
+
+### Added
+
+- Downloadable release binaries for Linux, macOS and Windows (amd64 +
+  arm64), packaged with a SHA-256 checksum file; the release workflow
+  builds them automatically when a `v*` tag is pushed.
+- `--version` flag, stamped with the release tag at build time by the
+  release workflow
+- Alerts surfaced in the dashboard: bell with an unread badge and a recent
+  alerts panel; every fired alert is kept in the store and served via
+  `GET /api/alerts`
+- Alerts persisted with the miner's IP and model for display (database
+  migrates on open)
+- CSV and JSON history export: `GET /api/miners/{id}/export/{csv,json}`,
+  served as a file attachment
+
 ## [0.1.0] - 2026-10-09
 
 Initial release.

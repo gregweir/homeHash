@@ -102,6 +102,37 @@ Historical stats for one miner.
 }
 ```
 
+### GET /api/miners/{id}/export/{format}
+
+Download a miner's stat history as a file attachment — `Content-Disposition:
+attachment`. Handy for spreadsheets (`csv`) or scripts (`json`).
+
+**Path Parameters:**
+- `{format}` — `csv` or `json` (anything else returns 400)
+
+**Query Parameters:**
+- `hours` — window length, clamped to 1–168 (default 24)
+
+**CSV** (`text/csv`) columns, oldest first:
+`timestamp, hash_rate_gh, power_w, temperature_c, fan_speed, accepted,
+rejected, uptime_seconds`
+
+```csv
+timestamp,hash_rate_gh,power_w,temperature_c,fan_speed,accepted,rejected,uptime_seconds
+2026-10-09T22:55:19Z,1342.6,20.86,54.25,80,103104,58,3800240
+```
+
+**JSON** (`application/json`): same shape as `GET /api/miners/{id}/history`,
+plus an attachment header:
+
+```json
+{
+  "miner_id": "bitaxe-192-168-1-10",
+  "hours": 24,
+  "data": [{"hash_rate_gh": 1342.6, "accepted": 103104, "rejected": 58, "temperature_c": 54.25, "fan_speed": 80, "power_w": 20.86, "uptime_seconds": 3800240, "timestamp": "2026-10-09T22:55:19Z"}]
+}
+```
+
 ### GET /api/stats
 
 Aggregate farm statistics over miners polled recently. The dashboard's KPI

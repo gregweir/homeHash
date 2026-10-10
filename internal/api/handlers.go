@@ -3,6 +3,7 @@
 package api
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -41,6 +42,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/miners", h.ListMiners)
 	mux.HandleFunc("GET /api/miners/{id}", h.GetMiner)
 	mux.HandleFunc("GET /api/miners/{id}/history", h.MinerHistory)
+	mux.HandleFunc("GET /api/miners/{id}/export/{format}", h.ExportHistory)
 	mux.HandleFunc("GET /api/alerts", h.ListAlerts)
 	mux.HandleFunc("GET /api/stats", h.Stats)
 	mux.HandleFunc("GET /api/events", h.Events)
@@ -224,6 +226,87 @@ func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{"alerts": views})
+}
+
+// ExportHistory downloads a miner's stat history as CSV or JSON, with a
+// Content-Disposition attachment header so browsers save it directly.
+func (h *Handler) ExportHistory(w http.ResponseWriter, r *http.Request) {
+	m, ok := h.lookupMiner(w, r)
+	if !ok {
+		return
+	}
+
+	format := r.PathValue("format")
+	if format != "csv" && format != "json" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("unsupported format %q (use csv or json)", format),
+		})
+		return
+	}
+
+	hours := queryHours(r, 24)
+	data, err := h.store.History(m.ID, time.Now().Add(-time.Duration(hours)*time.Hour))
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf("attachment; filename=%q", fmt.Sprintf("%s-history-%dh.%s", m.ID, hours, format)))
+
+	views := make([]statsView, 0, len(data))
+	for _, st := range data {
+		views = append(views, statsViewOf(st))
+	}
+
+	if format == "json" {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"miner_id": m.ID,
+			"hours":    hours,
+			"data":     views,
+		})
+		return
+	}
+
+	writeHistoryCSV(w, views)
+}
+
+// historyCSVHeader is the CSV export column order.
+var historyCSVHeader = []string{
+	"timestamp", "hash_rate_gh", "power_w", "temperature_c",
+	"fan_speed", "accepted", "rejected", "uptime_seconds",
+}
+
+func writeHistoryCSV(w http.ResponseWriter, points []statsView) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	cw := csv.NewWriter(w)
+	if err := cw.Write(historyCSVHeader); err != nil {
+		log.Printf("api: write csv header: %v", err)
+		return
+	}
+	for _, p := range points {
+		if err := cw.Write([]string{
+			p.Timestamp,
+			fmtG(p.HashRateGH),
+			fmtG(p.PowerW),
+			fmtG(p.TemperatureC),
+			strconv.Itoa(p.FanSpeed),
+			strconv.FormatInt(p.Accepted, 10),
+			strconv.FormatInt(p.Rejected, 10),
+			strconv.FormatInt(p.UptimeSeconds, 10),
+		}); err != nil {
+			log.Printf("api: write csv row: %v", err)
+			return
+		}
+	}
+	cw.Flush()
+}
+
+// fmtG prints floats roundly for CSV/JSON consumption.
+func fmtG(v float64) string {
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
 // lookupMiner resolves the {id} path value, writing a 404 when unknown.

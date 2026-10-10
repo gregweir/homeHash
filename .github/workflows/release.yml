@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runs_on: ubuntu-latest
+            archive: tar.gz
+          - goos: linux
+            goarch: arm64
+            runs_on: ubuntu-latest
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            runs_on: macos-latest
+            archive: tar.gz
+          - goos: darwin
+            goarch: amd64
+            runs_on: macos-latest
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            runs_on: windows-latest
+            archive: zip
+          - goos: windows
+            goarch: arm64
+            runs_on: windows-latest
+            archive: zip
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Build
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o "dist/homeHash${{ matrix.goos == 'windows' && '.exe' || '' }}" \
+            ./cmd/homeHash
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          dir="homeHash_${VERSION}_${GOOS}_${GOARCH}"
+          mkdir -p "pkg/${dir}"
+          cp dist/homeHash "pkg/${dir}/"
+          cp README.md LICENSE "pkg/${dir}/"
+          (cd pkg && tar -czf "../homeHash_${VERSION}_${GOOS}_${GOARCH}.tar.gz" "${dir}")
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          $VERSION = "$env:GITHUB_REF_NAME" -replace '^v', ''
+          $dir = "homeHash_${VERSION}_windows_${env:GOARCH}"
+          New-Item -ItemType Directory "pkg/${dir}" -Force | Out-Null
+          Copy-Item dist/homeHash.exe "pkg/${dir}/"
+          Copy-Item README.md, LICENSE "pkg/${dir}/"
+          Compress-Archive -Path "pkg/${dir}" -DestinationPath "homeHash_${VERSION}_windows_${env:GOARCH}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homeHash-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: homeHash_*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect packages
+        uses: actions/download-artifact@v5
+        with:
+          pattern: homeHash-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt
+
+      - name: Create release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "homeHash ${GITHUB_REF_NAME}" \
+            --notes "See [CHANGELOG.md](https://github.com/gregweir/homeHash/blob/main/CHANGELOG.md) for what's new." \
+            *.tar.gz *.zip checksums.txt

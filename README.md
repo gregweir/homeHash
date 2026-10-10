@@ -263,6 +263,27 @@ The driver polls only this endpoint; older documentation referencing
 
 ## Installation
 
+### Prebuilt binaries (easiest)
+
+Grab the archive for your platform from the
+[latest release](https://github.com/gregweir/homeHash/releases/latest),
+unpack it, and run the binary. It discovers miners on its own; add
+`HOMEHASH_MINER` if you'd rather seed IPs explicitly.
+
+### macOS and Linux (Homebrew)
+
+```bash
+brew tap gregweir/tap
+brew install homehash
+```
+
+### Windows
+
+Download `homeHash_*_windows_amd64.zip`, extract it, and double-click
+`homeHash.exe` — then open http://localhost:8080. On first launch, Windows
+Firewall may ask permission for network discovery: allow it (only your local
+network is contacted).
+
 ### From Source
 
 Requires Go 1.26+:
@@ -273,7 +294,13 @@ cd homeHash
 go build -o homeHash ./cmd/homeHash
 ```
 
-### systemd Service
+Check what you're running with:
+
+```bash
+homeHash --version
+```
+
+### systemd Service (Linux)
 
 Copy `systemd/homeHash.service` to `/etc/systemd/system/`:
 

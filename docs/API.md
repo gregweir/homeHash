@@ -41,7 +41,7 @@ Returns all known miners ordered by ID, each with its latest stored stats and a
 {
   "miners": [
     {
-      "id": "bitaxe-192-168-8-12",
+      "id": "bitaxe-192-168-1-10",
       "ip": "192.168.1.10",
       "model": "Gamma 601",
       "driver": "bitaxe",
@@ -73,7 +73,7 @@ Returns one miner as `{"miner": {...}}` — the same miner shape as above plus a
 ```json
 {
   "miner": {
-    "id": "bitaxe-192-168-8-12",
+    "id": "bitaxe-192-168-1-10",
     "...": "same fields as list entry",
     "history": [
       {"hash_rate_gh": 1272.2, "accepted": 103104, "rejected": 58, "temperature_c": 54.3, "fan_speed": 80, "power_w": 20.9, "uptime_seconds": 3800235, "timestamp": "..."}
@@ -94,7 +94,7 @@ Historical stats for one miner.
 **Response:**
 ```json
 {
-  "miner_id": "bitaxe-192-168-8-12",
+  "miner_id": "bitaxe-192-168-1-10",
   "hours": 6,
   "data": [
     {"hash_rate_gh": 1342.6, "accepted": 103104, "rejected": 58, "temperature_c": 54.25, "fan_speed": 80, "power_w": 20.86, "uptime_seconds": 3800240, "timestamp": "2026-10-09T22:55:19Z"}
@@ -137,7 +137,7 @@ shape as the /api/miners entries>] }`
 ```json
 {
   "farm": {"total_miners": 2, "online": 2, "total_hashrate_gh": 3789.0, "...": "..."},
-  "miners": [{"id": "bitaxe-192-168-8-12", "...": "..."}]
+  "miners": [{"id": "bitaxe-192-168-1-10", "...": "..."}]
 }
 ```
 

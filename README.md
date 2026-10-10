@@ -110,7 +110,7 @@ type InfoUpdater interface {
 
 ```go
 type Miner struct {
-    ID        string    // e.g. "bitaxe-192-168-8-12"
+    ID        string    // e.g. "bitaxe-192-168-1-10"
     IP        string    // Local IP address (may include port)
     Model     string    // "Gamma 601", etc.
     Driver    string    // "bitaxe"
@@ -315,4 +315,4 @@ MIT License — see LICENSE file.
 
 Greg Weir ([Tartanleaf](https://www.tartanleaf.com/))
 
-Built while writing *Bitcoin Mining with Bitaxe*.
+Built by the author of the book *Bitcoin Mining with Bitaxe*.

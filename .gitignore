@@ -8,7 +8,3 @@ homehash.db
 homehash.db-shm
 homehash.db-wal
 *.log
-
-# Local tooling (not part of the project)
-.claude/
-.playwright-mcp/

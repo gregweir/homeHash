@@ -182,6 +182,13 @@ func parseInfo(info map[string]interface{}) base.Stats {
 	if v, ok := num(info, "coreVoltage"); ok {
 		s.CoreVoltageMv = int(v)
 	}
+	// What the ASIC actually runs vs what's configured (v2.15.3+).
+	if f, ok := num(info, "actualFrequency"); ok {
+		s.ActualFrequency = f
+	}
+	if v, ok := num(info, "coreVoltageActual"); ok {
+		s.CoreVoltageActualMv = int(v)
+	}
 	// Older firmware has no miningPaused key; only trust an explicit true.
 	s.Paused = info["miningPaused"] == true
 	return s

@@ -10,6 +10,11 @@ const (
 	KindTemperature   AlertKind = "temperature"
 	KindRecovered     AlertKind = "recovered"
 	KindTempRecovered AlertKind = "temp-recovered"
+	KindShareErrors   AlertKind = "share-errors"
+
+	// KindShareErrorsRecovered fires when the rejected-share rate is back in
+	// range after a share-errors alert.
+	KindShareErrorsRecovered AlertKind = "share-errors-recovered"
 )
 
 // AlertLevel is an alert's severity.

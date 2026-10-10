@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -328,5 +329,110 @@ func TestRunLoopPersistsAlerts(t *testing.T) {
 	}
 	if stored[0].Time.IsZero() {
 		t.Fatal("stored alert has zero time")
+	}
+}
+
+/* ---------- evaluator: invalid shares ---------- */
+
+// The invalid-share alert watches the miner's lifetime rejected-share
+// percentage — the signal that a board is misconfigured or failing.
+
+func shareErrEval(now func() time.Time, shareWarn float64) *Evaluator {
+	e := evalWith(now)
+	e.cfg.ShareErrorWarn = shareWarn
+	return e
+}
+
+func statsWithRejection(rejected, total int64) *base.Stats {
+	accepted := total - rejected
+	return &base.Stats{
+		Accepted: accepted, Rejected: rejected,
+		TemperatureC: 55,
+		Timestamp:    fixedNow()(),
+	}
+}
+
+func TestEvaluatorAlertsInvalidShareRateOnce(t *testing.T) {
+	now := fixedNow()
+	e := shareErrEval(now, 5)
+	miner := onlineMiner(now())
+	st := statsWithRejection(20, 200) // 10% rejected
+
+	alerts := e.Evaluate(miner, st)
+	if len(alerts) != 1 || alerts[0].Kind != KindShareErrors {
+		t.Fatalf("alerts = %+v, want one share-errors alert", alerts)
+	}
+	if alerts[0].Level != LevelWarning {
+		t.Errorf("level = %s, want warning", alerts[0].Level)
+	}
+	if !strings.Contains(alerts[0].Message, "10.0%") {
+		t.Errorf("message = %q, want it to carry the rate", alerts[0].Message)
+	}
+
+	// Same condition again: silent (state machine, not every cycle).
+	if alerts := e.Evaluate(miner, st); len(alerts) != 0 {
+		t.Fatalf("repeat alert: %+v", alerts)
+	}
+}
+
+func TestEvaluatorShareErrorsRecoversWhenRateDrops(t *testing.T) {
+	now := fixedNow()
+	e := shareErrEval(now, 5)
+	miner := onlineMiner(now())
+
+	if alerts := e.Evaluate(miner, statsWithRejection(30, 300)); len(alerts) != 1 {
+		t.Fatalf("want one share-errors alert, got %+v", alerts)
+	}
+	// Below threshold → one recovery, then silence.
+	alerts := e.Evaluate(miner, statsWithRejection(2, 300))
+	if len(alerts) != 1 || alerts[0].Kind != KindShareErrorsRecovered {
+		t.Fatalf("alerts = %+v, want share-errors-recovered", alerts)
+	}
+	if alerts[0].Level != LevelInfo {
+		t.Errorf("recovery level = %s, want info", alerts[0].Level)
+	}
+	if alerts := e.Evaluate(miner, statsWithRejection(2, 300)); len(alerts) != 0 {
+		t.Fatalf("repeat recovery: %+v", alerts)
+	}
+}
+
+func TestEvaluatorShareErrorsNeedsEnoughShares(t *testing.T) {
+	now := fixedNow()
+	miner := onlineMiner(now())
+
+	// 1 of 10 rejected = 10%, but too few shares to be meaningful.
+	e := shareErrEval(now, 5)
+	if alerts := e.Evaluate(miner, statsWithRejection(1, 10)); len(alerts) != 0 {
+		t.Fatalf("tiny share counts must not alert: %+v", alerts)
+	}
+	// Boundary: exactly at the threshold alerts.
+	e = shareErrEval(now, 5)
+	if alerts := e.Evaluate(miner, statsWithRejection(5, 100)); len(alerts) != 1 {
+		t.Fatalf("boundary 5%%: want alert, got %+v", alerts)
+	}
+}
+
+func TestEvaluatorShareErrorsDisabledAtZero(t *testing.T) {
+	now := fixedNow()
+	e := shareErrEval(now, 0)
+	miner := onlineMiner(now())
+	if alerts := e.Evaluate(miner, statsWithRejection(50, 100)); len(alerts) != 0 {
+		t.Fatalf("threshold 0 must disable the alert: %+v", alerts)
+	}
+}
+
+func TestEvaluatorShareErrorsAlertsAfterOfflineRecovery(t *testing.T) {
+	// A miner that was offline and came back with a bad share rate reports
+	// both alerts: recovery + share errors.
+	now := fixedNow()
+	e := shareErrEval(now, 5)
+	miner := onlineMiner(now().Add(-10 * time.Minute))
+	if alerts := e.Evaluate(miner, nil); len(alerts) != 1 || alerts[0].Kind != KindOffline {
+		t.Fatalf("setup: want offline alert, got %+v", alerts)
+	}
+	better := onlineMiner(now())
+	alerts := e.Evaluate(better, statsWithRejection(50, 100))
+	if len(alerts) != 2 || alerts[0].Kind != KindRecovered || alerts[1].Kind != KindShareErrors {
+		t.Fatalf("alerts = %+v, want recovered + share-errors", alerts)
 	}
 }

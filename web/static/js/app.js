@@ -822,6 +822,8 @@ function kindLabel(kind) {
     case "temperature": return "Temperature";
     case "recovered": return "Recovered";
     case "temp-recovered": return "Recovered";
+    case "share-errors": return "Invalid shares";
+    case "share-errors-recovered": return "Recovered";
     default: return kind;
   }
 }
@@ -1002,8 +1004,19 @@ function openSettingsDialog(minerID) {
   const m = state.miners.find((x) => x.id === minerID);
   if (!m || !m.stats) return;
   dlgMinerID = minerID;
-  $("dlg-miner-meta").textContent = `${minerName(minerID)} · ${m.ip}`;
   const s = m.stats;
+  // When the firmware reports what the ASIC actually runs (v2.15.3+), show
+  // it — it's the difference between configured and real, right up top.
+  let actuals = "no actuals reported (older firmware)";
+  const af = s.actual_frequency, av = s.actual_core_voltage_mv;
+  if (af > 0 || av > 0) {
+    const parts = [];
+    if (af > 0) parts.push(`${fmtNum(af, 1)} MHz`);
+    if (av > 0) parts.push(`${fmtNum(av, 0)} mV`);
+    actuals = `running at ${parts.join(" / ")}`;
+  }
+  $("dlg-miner-meta").textContent =
+    `${minerName(minerID)} · ${m.ip} · ${actuals}`;
   const f = $("dlg-frequency");
   const v = $("dlg-voltage");
   f.value = s.frequency > 0 ? String(Math.round(s.frequency)) : "";

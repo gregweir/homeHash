@@ -24,6 +24,9 @@ const (
 	KindTemperature   = base.KindTemperature
 	KindRecovered     = base.KindRecovered
 	KindTempRecovered = base.KindTempRecovered
+	KindShareErrors   = base.KindShareErrors
+
+	KindShareErrorsRecovered = base.KindShareErrorsRecovered
 
 	LevelInfo     = base.LevelInfo
 	LevelWarning  = base.LevelWarning
@@ -33,12 +36,16 @@ const (
 // Alert is one notification about one miner.
 type Alert = base.Alert
 
-// Config holds the evaluator thresholds. Zero values fall back to defaults.
+// Config holds the evaluator thresholds. Zero values fall back to defaults,
+// except ShareErrorWarn where zero disables the alert.
 type Config struct {
 	TempWarn     float64
 	TempCritical float64
 	OfflineAfter time.Duration
 	Cooldown     time.Duration
+	// ShareErrorWarn is the rejected-share percentage (0–100) above which a
+	// miner is considered misconfigured or failing. Zero disables the alert.
+	ShareErrorWarn float64
 	// Now is only set in tests; nil means time.Now.
 	Now func() time.Time
 }
@@ -67,11 +74,13 @@ type Evaluator struct {
 	levels map[string]*tempLevelState
 }
 
-// tempLevelState is the per-miner temperature state.
+// tempLevelState is the per-miner temperature state. shareErr tracks the
+// invalid-share alert so it notifies once, then recovers.
 type tempLevelState struct {
 	level          tempLevel
 	lastTempNotify time.Time
 	offline        bool
+	shareErr       bool
 }
 
 // NewEvaluator creates an evaluator with the given configuration.
@@ -106,9 +115,10 @@ func (e *Evaluator) Evaluate(miner base.Miner, st *base.Stats) []Alert {
 		if !state.offline {
 			state.offline = true
 			// The offline alert already covers the miner; clear any
-			// temperature alert silently.
+			// temperature and share-error alerts silently.
 			state.level = tempNone
 			state.lastTempNotify = time.Time{}
+			state.shareErr = false
 			return []Alert{{
 				Kind: KindOffline, Level: LevelCritical,
 				MinerID: miner.ID, MinerIP: miner.IP, Model: miner.Model,
@@ -132,6 +142,9 @@ func (e *Evaluator) Evaluate(miner base.Miner, st *base.Stats) []Alert {
 	if st == nil {
 		return alerts
 	}
+
+	// Invalid shares: lifetime rejected percentage, once per excursion.
+	alerts = append(alerts, e.evaluateShareErrors(miner, state, st)...)
 
 	level := tempNone
 	switch {
@@ -173,6 +186,46 @@ func (e *Evaluator) Evaluate(miner base.Miner, st *base.Stats) []Alert {
 		})
 	}
 	return alerts
+}
+
+// minShareTotal is the smallest share count the rejected rate means anything:
+// below it, one unlucky streak looks like a broken board.
+const minShareTotal = 100
+
+// evaluateShareErrors watches the lifetime rejected-share percentage. The
+// alert fires once when the rate climbs to the threshold and a recovery
+// fires when it drops back below.
+func (e *Evaluator) evaluateShareErrors(miner base.Miner, state *tempLevelState, st *base.Stats) []Alert {
+	if e.cfg.ShareErrorWarn <= 0 {
+		return nil
+	}
+	total := st.Accepted + st.Rejected
+	if total < minShareTotal {
+		return nil
+	}
+	rate := float64(st.Rejected) / float64(total) * 100
+
+	if rate >= e.cfg.ShareErrorWarn {
+		if state.shareErr {
+			return nil
+		}
+		state.shareErr = true
+		return []Alert{{
+			Kind: KindShareErrors, Level: LevelWarning,
+			MinerID: miner.ID, MinerIP: miner.IP, Model: miner.Model,
+			Message: fmt.Sprintf("invalid share rate %.1f%% above %.0f%% threshold (%d of %d shares rejected)",
+				rate, e.cfg.ShareErrorWarn, st.Rejected, total),
+		}}
+	}
+	if state.shareErr {
+		state.shareErr = false
+		return []Alert{{
+			Kind: KindShareErrorsRecovered, Level: LevelInfo,
+			MinerID: miner.ID, MinerIP: miner.IP, Model: miner.Model,
+			Message: fmt.Sprintf("invalid share rate back to %.1f%%", rate),
+		}}
+	}
+	return nil
 }
 
 func (e *Evaluator) offlineAfter() time.Duration {

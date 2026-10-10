@@ -36,6 +36,10 @@ func TestAlertConfigDefaults(t *testing.T) {
 	if cfg.AlertInterval <= 0 {
 		t.Fatalf("AlertInterval = %v, want positive", cfg.AlertInterval)
 	}
+	// Rejected-share alert: warn above 5% lifetime rejection, opt-out with 0.
+	if cfg.ShareErrorWarn != 5 {
+		t.Fatalf("ShareErrorWarn = %v, want 5", cfg.ShareErrorWarn)
+	}
 }
 
 func TestAlertConfigFromEnv(t *testing.T) {
@@ -46,6 +50,7 @@ func TestAlertConfigFromEnv(t *testing.T) {
 	set("HOMEHASH_ALERT_OFFLINE_AFTER", "3m")
 	set("HOMEHASH_ALERT_COOLDOWN", "120")
 	set("HOMEHASH_ALERT_INTERVAL", "30s")
+	set("HOMEHASH_ALERT_SHARE_ERR", "7.5")
 	set("HOMEHASH_MINER", "192.168.1.10,192.168.1.11")
 
 	cfg := Default()
@@ -67,8 +72,54 @@ func TestAlertConfigFromEnv(t *testing.T) {
 	if cfg.AlertInterval != 30*time.Second {
 		t.Fatalf("AlertInterval = %v, want 30s", cfg.AlertInterval)
 	}
+	if cfg.ShareErrorWarn != 7.5 {
+		t.Fatalf("ShareErrorWarn = %v, want 7.5", cfg.ShareErrorWarn)
+	}
 	if len(cfg.Miners) != 2 || cfg.Miners[1] != "192.168.1.11" {
 		t.Fatalf("Miners = %v", cfg.Miners)
+	}
+}
+
+func TestShareErrorWarnZeroDisables(t *testing.T) {
+	t.Setenv("HOMEHASH_ALERT_SHARE_ERR", "0")
+	if cfg := Default(); cfg.ShareErrorWarn != 0 {
+		t.Fatalf("ShareErrorWarn = %v, want 0 (disabled)", cfg.ShareErrorWarn)
+	}
+}
+
+func TestEmailConfigDefaults(t *testing.T) {
+	cfg := Default()
+	if cfg.AlertEmailHost != "" || cfg.AlertEmailFrom != "" || len(cfg.AlertEmailTo) != 0 {
+		t.Fatalf("email should default off, got host=%q to=%v", cfg.AlertEmailHost, cfg.AlertEmailTo)
+	}
+	if cfg.AlertEmailPort != 587 {
+		t.Fatalf("AlertEmailPort = %d, want 587 (STARTTLS)", cfg.AlertEmailPort)
+	}
+}
+
+func TestEmailConfigFromEnv(t *testing.T) {
+	t.Setenv("HOMEHASH_ALERT_EMAIL_HOST", "smtp.home.local")
+	t.Setenv("HOMEHASH_ALERT_EMAIL_PORT", "465")
+	t.Setenv("HOMEHASH_ALERT_EMAIL_USERNAME", "hash")
+	t.Setenv("HOMEHASH_ALERT_EMAIL_PASSWORD", "s3cret")
+	t.Setenv("HOMEHASH_ALERT_EMAIL_FROM", "hash@home.local")
+	t.Setenv("HOMEHASH_ALERT_EMAIL_TO", "greg@home.local,backup@home.local")
+
+	cfg := Default()
+	if cfg.AlertEmailHost != "smtp.home.local" {
+		t.Fatalf("AlertEmailHost = %q", cfg.AlertEmailHost)
+	}
+	if cfg.AlertEmailPort != 465 {
+		t.Fatalf("AlertEmailPort = %d", cfg.AlertEmailPort)
+	}
+	if cfg.AlertEmailUsername != "hash" || cfg.AlertEmailPassword != "s3cret" {
+		t.Fatalf("email credentials = %q/%q", cfg.AlertEmailUsername, cfg.AlertEmailPassword)
+	}
+	if cfg.AlertEmailFrom != "hash@home.local" {
+		t.Fatalf("AlertEmailFrom = %q", cfg.AlertEmailFrom)
+	}
+	if len(cfg.AlertEmailTo) != 2 || cfg.AlertEmailTo[1] != "backup@home.local" {
+		t.Fatalf("AlertEmailTo = %v", cfg.AlertEmailTo)
 	}
 }
 

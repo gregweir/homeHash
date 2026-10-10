@@ -3,6 +3,26 @@
 All notable changes to homeHash are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-10-10
+
+### Added
+
+- Invalid-share-rate alert: when a miner's lifetime rejected-share percentage
+  reaches `HOMEHASH_ALERT_SHARE_ERR` (default 5%, disable with 0), it alerts
+  once (warning) and recovers when the rate drops back (info). Needs at least
+  100 lifetime shares before the rate is trusted
+- Email notifier: alerts go as plain-text email through an SMTP relay
+  (`HOMEHASH_ALERT_EMAIL_HOST/PORT/USERNAME/PASSWORD/FROM/TO`); port 587
+  upgrades to STARTTLS, 465 uses implicit TLS, credentials optional. Several
+  channels can be combined — every alert goes to the log, plus each
+  configured channel (Discord webhook and/or email)
+- Stats carry what the ASIC is actually running at, where the firmware
+  reports it: `actual_frequency` and `actual_core_voltage_mv` (firmware
+  v2.15.3+; fields are 0 on devices that don't report them, and history
+  migrates on open). The settings dialog shows the device-reported actuals
+- README documents remote access: don't port-forward an unauthenticated
+  dashboard — use Tailscale or an authenticated reverse proxy
+
 ## [0.3.0] - 2026-10-10
 
 ### Added

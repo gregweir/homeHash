@@ -29,6 +29,9 @@ type Stats struct {
 	Frequency     float64       // Configured ASIC frequency (MHz), 0 if unknown
 	CoreVoltageMv int           // Configured core voltage (mV), 0 if unknown
 	Paused        bool          // True while mining is paused (device-reported)
+
+	ActualFrequency     float64 // Frequency the ASIC is actually running (MHz), 0 if firmware doesn't report it
+	CoreVoltageActualMv int     // Voltage the ASIC is actually running (mV), 0 if firmware doesn't report it
 }
 
 // InfoUpdater is optionally implemented by drivers that can refresh a

@@ -146,6 +146,53 @@ func TestPollParsesPowerFromVoltageAndCurrentFallback(t *testing.T) {
 	}
 }
 
+// Fixture: a v2.15.3-class payload — classic fields plus what it newly
+// reports: configured vs actually running frequency/voltage, pause state.
+const sysInfoGamma215 = `{
+	"hostname": "Gamma 601",
+	"hashRate": 1191.4,
+	"temp": 54.5,
+	"fanspeed": 80,
+	"sharesAccepted": 102983,
+	"sharesRejected": 57,
+	"uptimeSeconds": 3798833,
+	"power": 20.86,
+	"frequency": 620,
+	"coreVoltage": 1160,
+	"actualFrequency": 618.75,
+	"coreVoltageActual": 1152,
+	"miningPaused": false,
+	"version": "v2.15.3"
+}`
+
+func TestParseInfoReadsActualFrequencyAndVoltage(t *testing.T) {
+	// v2.15.3 reports what the ASIC is actually running, next to the
+	// configured values.
+	d, ip, _ := newFakeMiner(t, sysInfoGamma215)
+	stats, err := d.Poll(minerAt(ip))
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	if diff(stats.ActualFrequency, 618.75) > 0.001 {
+		t.Errorf("ActualFrequency: want 618.75, got %v", stats.ActualFrequency)
+	}
+	if stats.CoreVoltageActualMv != 1152 {
+		t.Errorf("CoreVoltageActualMv: want 1152, got %d", stats.CoreVoltageActualMv)
+	}
+
+	// Older firmware (v2.12.0) lacks both keys: fields stay zero, nothing
+	// breaks.
+	d2, ip2, _ := newFakeMiner(t, sysInfoNoPowerField)
+	stats2, err := d2.Poll(minerAt(ip2))
+	if err != nil {
+		t.Fatalf("Poll v2.12: %v", err)
+	}
+	if stats2.ActualFrequency != 0 || stats2.CoreVoltageActualMv != 0 {
+		t.Errorf("want zeros on old firmware, got %v/%d",
+			stats2.ActualFrequency, stats2.CoreVoltageActualMv)
+	}
+}
+
 func TestParseInfoReportsPaused(t *testing.T) {
 	// v2.15.3 reports "miningPaused"; older firmware omits the key entirely.
 	for _, tc := range []struct {

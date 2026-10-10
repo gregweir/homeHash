@@ -89,6 +89,8 @@ func Open(path string) (*Store, error) {
 		{"frequency_mhz", "REAL"},
 		{"core_voltage_mv", "INTEGER"},
 		{"paused", "INTEGER"},
+		{"actual_frequency_mhz", "REAL"},
+		{"actual_core_voltage_mv", "INTEGER"},
 	} {
 		if err := addColumnIfMissing(db, "stats_history", col.name, col.typ); err != nil {
 			db.Close()
@@ -226,11 +228,12 @@ func (s *Store) Miners() ([]base.Miner, error) {
 func (s *Store) RecordStats(minerID string, st base.Stats) error {
 	_, err := s.db.Exec(`
 		INSERT INTO stats_history
-			(miner_id, hash_rate_gh, accepted, rejected, temperature_c, fan_speed, power_w, uptime_nanos, frequency_mhz, core_voltage_mv, paused, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(miner_id, hash_rate_gh, accepted, rejected, temperature_c, fan_speed, power_w, uptime_nanos, frequency_mhz, core_voltage_mv, paused, actual_frequency_mhz, actual_core_voltage_mv, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		minerID, st.HashRateGH, st.Accepted, st.Rejected,
 		st.TemperatureC, st.FanSpeed, st.PowerW, st.Uptime.Nanoseconds(),
 		st.Frequency, st.CoreVoltageMv, btoi(st.Paused),
+		st.ActualFrequency, st.CoreVoltageActualMv,
 		st.Timestamp.Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("record stats for %s: %w", minerID, err)
@@ -243,7 +246,8 @@ func (s *Store) LatestStats(minerID string) (*base.Stats, error) {
 	row := s.db.QueryRow(`
 		SELECT hash_rate_gh, accepted, rejected, temperature_c, fan_speed,
 		       power_w, uptime_nanos, timestamp,
-		       COALESCE(frequency_mhz, 0), COALESCE(core_voltage_mv, 0), COALESCE(paused, 0)
+		       COALESCE(frequency_mhz, 0), COALESCE(core_voltage_mv, 0), COALESCE(paused, 0),
+		       COALESCE(actual_frequency_mhz, 0), COALESCE(actual_core_voltage_mv, 0)
 		FROM stats_history
 		WHERE miner_id = ?
 		ORDER BY timestamp DESC
@@ -257,7 +261,8 @@ func (s *Store) LatestStats(minerID string) (*base.Stats, error) {
 	)
 	err := row.Scan(&st.HashRateGH, &st.Accepted, &st.Rejected,
 		&st.TemperatureC, &st.FanSpeed, &st.PowerW, &upNanos, &tsStr,
-		&st.Frequency, &st.CoreVoltageMv, &pausedI)
+		&st.Frequency, &st.CoreVoltageMv, &pausedI,
+		&st.ActualFrequency, &st.CoreVoltageActualMv)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -337,7 +342,8 @@ func (s *Store) History(minerID string, since time.Time) ([]base.Stats, error) {
 	rows, err := s.db.Query(`
 		SELECT hash_rate_gh, accepted, rejected, temperature_c, fan_speed,
 		       power_w, uptime_nanos, timestamp,
-		       COALESCE(frequency_mhz, 0), COALESCE(core_voltage_mv, 0), COALESCE(paused, 0)
+		       COALESCE(frequency_mhz, 0), COALESCE(core_voltage_mv, 0), COALESCE(paused, 0),
+		       COALESCE(actual_frequency_mhz, 0), COALESCE(actual_core_voltage_mv, 0)
 		FROM stats_history
 		WHERE miner_id = ? AND timestamp >= ?
 		ORDER BY timestamp ASC`,
@@ -357,7 +363,8 @@ func (s *Store) History(minerID string, since time.Time) ([]base.Stats, error) {
 		)
 		if err := rows.Scan(&st.HashRateGH, &st.Accepted, &st.Rejected,
 			&st.TemperatureC, &st.FanSpeed, &st.PowerW, &upNanos, &tsStr,
-			&st.Frequency, &st.CoreVoltageMv, &pausedI); err != nil {
+			&st.Frequency, &st.CoreVoltageMv, &pausedI,
+			&st.ActualFrequency, &st.CoreVoltageActualMv); err != nil {
 			return nil, fmt.Errorf("scan stats: %w", err)
 		}
 		st.Paused = pausedI != 0

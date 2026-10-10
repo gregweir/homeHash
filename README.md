@@ -50,11 +50,17 @@ Configuration is all environment variables:
 | `HOMEHASH_DISCOVERY_INTERVAL` | 5m | How often to rescan for new miners |
 | `HOMEHASH_ALERTS` | true | Alerting loop toggle |
 | `HOMEHASH_ALERT_WEBHOOK_URL` | — | Discord webhook URL (empty: log-only alerts) |
+| `HOMEHASH_ALERT_EMAIL_HOST` | — | SMTP relay hostname; set (with from + to) to enable email alerts |
+| `HOMEHASH_ALERT_EMAIL_PORT` | 587 | SMTP port (587 STARTTLS, 465 implicit TLS) |
+| `HOMEHASH_ALERT_EMAIL_USERNAME` / `HOMEHASH_ALERT_EMAIL_PASSWORD` | — | Optional SMTP login |
+| `HOMEHASH_ALERT_EMAIL_FROM` | — | Sender address |
+| `HOMEHASH_ALERT_EMAIL_TO` | — | Recipient addresses, comma-separated |
 | `HOMEHASH_ALERT_TEMP_WARN` | 75 | Warn above this board temperature (°C) |
 | `HOMEHASH_ALERT_TEMP_CRITICAL` | 85 | Critical above this (°C) |
 | `HOMEHASH_ALERT_OFFLINE_AFTER` | 10m | Miner offline when last poll is older than this |
 | `HOMEHASH_ALERT_COOLDOWN` | 15m | Re-alert the same condition after this long |
 | `HOMEHASH_ALERT_INTERVAL` | 30s | Alert evaluation cadence |
+| `HOMEHASH_ALERT_SHARE_ERR` | 5 | Warn when lifetime rejected shares exceed this % (0 disables) |
 | `HOMEHASH_CONTROL` | false | Write access: settings changes + pause/resume |
 | `HOMEHASH_CONTROL_FREQ_MIN` / `HOMEHASH_CONTROL_FREQ_MAX` | 100 / 750 | Accepted ASIC frequency range (MHz) |
 | `HOMEHASH_CONTROL_VOLT_MIN` / `HOMEHASH_CONTROL_VOLT_MAX` | 900 / 1300 | Accepted core voltage range (mV) |
@@ -81,6 +87,24 @@ A few things worth knowing before enabling:
   miners — the whole HTTP surface is deliberately unauthenticated and
   LAN-only. Don't run homeHash on a shared network, and don't port-forward it.
 
+### Remote access (read this before port-forwarding at all)
+
+homeHash has no authentication or TLS — it assumes a home LAN only. For
+viewing the dashboard from outside your home, don't open the port on your
+router; the usual choices are:
+
+- **Tailscale** (zero-config WireGuard): install on the host running homeHash
+  and on your phone/laptop, and reach it at the host's Tailscale IP —
+  `http://<host-tailscale-name>:8080`. Everything stays on your own tailnet;
+  nothing is exposed to the internet.
+- **An authenticated reverse proxy** (e.g. Caddy, nginx with basic auth or
+  forward-auth) — fine too, but now you own the TLS certs, the password, and
+  the fail2ban.
+
+The same rule applies doubly when `HOMEHASH_CONTROL` is on: pause/resume and
+settings changes over an unauthenticated endpoint must only ever be reachable
+from your own network.
+
 Both features use the same guard rails as everything else: see
 `docs/API.md` (`POST /api/miners/{id}/settings`, `/pause`, `/resume`).
 
@@ -105,8 +129,13 @@ successful poll is older than `HOMEHASH_ALERT_OFFLINE_AFTER` alerts offline
 (critical), once; a miner that returns alerts recovery (info); board
 temperature above `TEMP_WARN` warns and above `TEMP_CRITICAL` escalates to
 critical, repeating only after `ALERT_COOLDOWN`, and recovers once below
-range. Alerts go to the process log by default, or to Discord when
-`HOMEHASH_ALERT_WEBHOOK_URL` is set, and every alert is kept in the store:
+range. When a miner's lifetime rejected-share percentage reaches
+`HOMEHASH_ALERT_SHARE_ERR` (default 5%, disable with 0) it alerts once and
+recovers when the rate drops back — the usual sign of a misconfigured or
+failing board. Alerts go to the process log by default, or to Discord when
+`HOMEHASH_ALERT_WEBHOOK_URL` is set, and/or as plain-text email when
+`HOMEHASH_ALERT_EMAIL_HOST` (with from + to) is set — every configured
+channel receives every alert. Any way, every alert is kept in the store:
 the dashboard's bell shows an unread badge and lists recent alerts (`GET
 /api/alerts`, see `docs/API.md`).
 
@@ -380,9 +409,10 @@ response, so new models appear without any mapping table. Driver unit notes in
 - [x] Alerting (offline / recovery / temperature, log + Discord webhook)
 - [x] Alerts surfaced in the dashboard (bell panel, unread badge)
 - [x] CSV/JSON history export
+- [x] Alerting for invalid share rate (rejected % above threshold, with recovery)
 - [x] Miner control: frequency/voltage settings + pause/resume (opt-in, off by default)
 - [x] Release binaries for Linux/macOS/Windows (amd64 + arm64)
-- [ ] Email notifier
+- [x] Email notifier (SMTP, STARTTLS / implicit TLS, optional auth)
 - [ ] NerdMiner support (needs hardware donation or community PR)
 - [ ] Tailscale integration
 

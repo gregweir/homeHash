@@ -107,6 +107,9 @@ type statsView struct {
 	Frequency     float64 `json:"frequency"`
 	CoreVoltageMv int     `json:"core_voltage_mv"`
 	Paused        bool    `json:"paused"`
+
+	ActualFrequency     float64 `json:"actual_frequency"`       // as ASIC runs it; 0 when firmware doesn't report
+	CoreVoltageActualMv int     `json:"actual_core_voltage_mv"` // as ASIC runs it; 0 when firmware doesn't report
 }
 
 // minerView is the JSON shape of a miner for the API and web UI.
@@ -534,6 +537,9 @@ func statsViewOf(st base.Stats) statsView {
 		Frequency:     st.Frequency,
 		CoreVoltageMv: st.CoreVoltageMv,
 		Paused:        st.Paused,
+
+		ActualFrequency:     st.ActualFrequency,
+		CoreVoltageActualMv: st.CoreVoltageActualMv,
 	}
 }
 

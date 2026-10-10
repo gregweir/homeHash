@@ -26,6 +26,17 @@ type Config struct {
 	OfflineAfter    time.Duration // A miner is offline when last poll is older than this
 	AlertCooldown   time.Duration // Re-nag for the same condition after this long
 	AlertInterval   time.Duration // How often the alert loop evaluates
+	// ShareErrorWarn is the lifetime rejected-share percentage above which a
+	// miner is considered misconfigured or failing. Zero disables the alert.
+	ShareErrorWarn float64
+	// Email notifier (in addition to the webhook/log). All-or-nothing: host
+	// set means email is on.
+	AlertEmailHost     string // SMTP relay hostname; empty disables email
+	AlertEmailPort     int    // 587 (STARTTLS), 465 (implicit TLS), 25
+	AlertEmailUsername string // optional SMTP credentials
+	AlertEmailPassword string
+	AlertEmailFrom     string
+	AlertEmailTo       []string // comma-separated list from HOMEHASH_ALERT_EMAIL_TO
 
 	// Control: write access to miners (settings, pause, resume). Off by
 	// default — a monitor ships read-only.
@@ -54,6 +65,14 @@ func Default() *Config {
 		OfflineAfter:    getEnvDuration("HOMEHASH_ALERT_OFFLINE_AFTER", 10*time.Minute),
 		AlertCooldown:   getEnvDuration("HOMEHASH_ALERT_COOLDOWN", 15*time.Minute),
 		AlertInterval:   getEnvDuration("HOMEHASH_ALERT_INTERVAL", 30*time.Second),
+		ShareErrorWarn:  getEnvFloat("HOMEHASH_ALERT_SHARE_ERR", 5),
+
+		AlertEmailHost:     getEnv("HOMEHASH_ALERT_EMAIL_HOST", ""),
+		AlertEmailPort:     getEnvInt("HOMEHASH_ALERT_EMAIL_PORT", 587),
+		AlertEmailUsername: getEnv("HOMEHASH_ALERT_EMAIL_USERNAME", ""),
+		AlertEmailPassword: getEnv("HOMEHASH_ALERT_EMAIL_PASSWORD", ""),
+		AlertEmailFrom:     getEnv("HOMEHASH_ALERT_EMAIL_FROM", ""),
+		AlertEmailTo:       getCommaList("HOMEHASH_ALERT_EMAIL_TO"),
 
 		ControlEnabled: getEnvBool("HOMEHASH_CONTROL", false),
 		ControlFreqMin: getEnvFloat("HOMEHASH_CONTROL_FREQ_MIN", 100),
@@ -65,7 +84,12 @@ func Default() *Config {
 
 // getMiners parses the HOMEHASH_MINER seed list.
 func getMiners() []string {
-	ips := os.Getenv("HOMEHASH_MINER")
+	return getCommaList("HOMEHASH_MINER")
+}
+
+// getCommaList parses a comma-separated env list, dropping blanks.
+func getCommaList(key string) []string {
+	ips := os.Getenv(key)
 	if ips == "" {
 		return nil
 	}

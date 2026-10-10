@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -120,17 +121,36 @@ func main() {
 		log.Printf("Discovery disabled")
 	}
 
-	// Alerting loop (log by default, Discord webhook when configured)
+	// Alerting loop (log by default; Discord webhook and/or email when
+	// configured — every alert goes to every channel that is set up).
 	if cfg.AlertEnabled {
-		var notifier alerts.Notifier = alerts.LogNotifier{}
+		var notifiers []alerts.Notifier
 		if cfg.AlertWebhookURL != "" {
-			notifier = alerts.NewDiscordWebhook(cfg.AlertWebhookURL, 5*time.Second)
+			notifiers = append(notifiers, alerts.NewDiscordWebhook(cfg.AlertWebhookURL, 5*time.Second))
+		}
+		if cfg.AlertEmailHost != "" && len(cfg.AlertEmailTo) > 0 && cfg.AlertEmailFrom != "" {
+			notifiers = append(notifiers, alerts.NewEmail(alerts.EmailConfig{
+				Host:     cfg.AlertEmailHost,
+				Port:     strconv.Itoa(cfg.AlertEmailPort),
+				Username: cfg.AlertEmailUsername,
+				Password: cfg.AlertEmailPassword,
+				From:     cfg.AlertEmailFrom,
+				To:       cfg.AlertEmailTo,
+			}))
+		}
+		notifier := alerts.Notifier(alerts.LogNotifier{})
+		switch {
+		case len(notifiers) == 1:
+			notifier = notifiers[0]
+		case len(notifiers) > 1:
+			notifier = alerts.NewMulti(notifiers...)
 		}
 		evaluator := alerts.NewEvaluator(alerts.Config{
-			TempWarn:     cfg.TempWarningC,
-			TempCritical: cfg.TempCriticalC,
-			OfflineAfter: cfg.OfflineAfter,
-			Cooldown:     cfg.AlertCooldown,
+			TempWarn:       cfg.TempWarningC,
+			TempCritical:   cfg.TempCriticalC,
+			OfflineAfter:   cfg.OfflineAfter,
+			Cooldown:       cfg.AlertCooldown,
+			ShareErrorWarn: cfg.ShareErrorWarn,
 		})
 		go alerts.Run(ctx, st, evaluator, notifier, cfg.AlertInterval)
 	}

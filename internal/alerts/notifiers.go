@@ -4,11 +4,30 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 )
+
+// MultiNotifier fans one alert out to several notifiers, reporting every
+// failure. It lets main combine a webhook with, say, email.
+type MultiNotifier []Notifier
+
+// NewMulti wraps the given notifiers in one.
+func NewMulti(ns ...Notifier) MultiNotifier { return ns }
+
+// Notify sends to each notifier and joins the errors (nil if all succeed).
+func (m MultiNotifier) Notify(ctx context.Context, a Alert) error {
+	var errs []error
+	for _, n := range m {
+		if err := n.Notify(ctx, a); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // LogNotifier writes each alert to the process log. It is the default
 // notifier when nothing else is configured.

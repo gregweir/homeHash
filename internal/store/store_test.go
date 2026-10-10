@@ -175,10 +175,14 @@ func TestLatestStats(t *testing.T) {
 		Frequency:     620,
 		CoreVoltageMv: 1160,
 		Paused:        false,
+
+		ActualFrequency:     618.75,
+		CoreVoltageActualMv: 1152,
 	}
 	older := st
 	older.HashRateGH = 440
 	older.Paused = true
+	older.ActualFrequency = 619.5
 	older.Timestamp = st.Timestamp.Add(-time.Hour)
 
 	if err := s.RecordStats("miner-abc", older); err != nil {
@@ -224,6 +228,9 @@ func TestRecordStatsAndHistory(t *testing.T) {
 		Frequency:     618.5,
 		CoreVoltageMv: 1150,
 		Paused:        true,
+
+		ActualFrequency:     617.25,
+		CoreVoltageActualMv: 1148,
 	}
 	st2 := st1
 	st2.Timestamp = st1.Timestamp.Add(time.Minute)

@@ -301,7 +301,8 @@ func statsBody(t *testing.T, h *Handler) []byte {
 }
 
 // Latest stats must carry the settings the miner now runs at, so the UI can
-// show current frequency/voltage and a paused state.
+// show current frequency/voltage and a paused state — plus what the ASIC
+// actually runs at, where firmware reports it.
 func TestStatsViewIncludesFrequencyVoltagePaused(t *testing.T) {
 	s, _, reg := newControlStore(t)
 	if err := s.RecordStats("ctl-miner", base.Stats{
@@ -310,6 +311,9 @@ func TestStatsViewIncludesFrequencyVoltagePaused(t *testing.T) {
 		Frequency:     618.5,
 		CoreVoltageMv: 1150,
 		Paused:        true,
+
+		ActualFrequency:     618.25,
+		CoreVoltageActualMv: 1148,
 	}); err != nil {
 		t.Fatalf("RecordStats: %v", err)
 	}
@@ -328,6 +332,9 @@ func TestStatsViewIncludesFrequencyVoltagePaused(t *testing.T) {
 				Frequency     float64 `json:"frequency"`
 				CoreVoltageMv int     `json:"core_voltage_mv"`
 				Paused        bool    `json:"paused"`
+
+				ActualFrequency     float64 `json:"actual_frequency"`
+				CoreVoltageActualMv int     `json:"actual_core_voltage_mv"`
 			} `json:"stats"`
 		} `json:"miners"`
 	}
@@ -343,6 +350,10 @@ func TestStatsViewIncludesFrequencyVoltagePaused(t *testing.T) {
 		}
 		if m.Stats.Frequency != 618.5 || m.Stats.CoreVoltageMv != 1150 || !m.Stats.Paused {
 			t.Fatalf("stats = %+v, want freq 618.5, 1150 mV, paused", m.Stats)
+		}
+		if m.Stats.ActualFrequency != 618.25 || m.Stats.CoreVoltageActualMv != 1148 {
+			t.Fatalf("actuals = %v/%d, want 618.25/1148",
+				m.Stats.ActualFrequency, m.Stats.CoreVoltageActualMv)
 		}
 	}
 }

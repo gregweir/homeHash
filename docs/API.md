@@ -66,7 +66,9 @@ Returns all known miners ordered by ID, each with its latest stored stats and a
         "timestamp": "2026-10-09T22:55:14Z",
         "frequency": 620,
         "core_voltage_mv": 1160,
-        "paused": false
+        "paused": false,
+        "actual_frequency": 618.75,
+        "actual_core_voltage_mv": 1152
       }
     }
   ]
@@ -314,13 +316,13 @@ your unit.
 | frequency | float | Configured ASIC frequency in MHz (0 if unknown) |
 | core_voltage_mv | int | Configured core voltage in mV (0 if unknown) |
 | paused | bool | True while mining is paused on the device |
-
-### Alert
+| actual_frequency | float | Frequency the ASIC is actually running at, MHz (0 on firmware that doesn't report it) |
+| actual_core_voltage_mv | int | Voltage the ASIC is actually running at, mV (0 on firmware that doesn't report it) |
 
 | Field | Type | Description |
 |-------|------|-------------|
 | time | ISO 8601 | When the alert fired (nano precision) |
-| kind | string | "offline", "temperature", "recovered", "temp-recovered" |
+| kind | string | "offline", "temperature", "recovered", "temp-recovered", "share-errors", "share-errors-recovered" |
 | level | string | "info", "warning", "critical" |
 | miner_id | string | Miner the alert is about |
 | miner_ip | string | Last known IP of that miner |
